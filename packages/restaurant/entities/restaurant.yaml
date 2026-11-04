@@ -1,0 +1,137 @@
+- name: Outlet
+  label: Outlet
+  label_plural: Outlets
+  kind: master
+  module: restaurant
+  title_field: outlet_name
+  description: A restaurant. Its menu prices what is ordered; its bills go through ERP.
+  fields:
+    - {name: outlet_name, type: data, required: true, in_list: true}
+    - {name: company, type: link, to: Company, required: true, in_list: true}
+    - {name: walk_in_customer, type: link, to: Customer, required: true, description: "Who a bill goes to when the order names nobody"}
+    - {name: menu, type: link, to: Menu, label: Active Menu}
+  list: {columns: [outlet_name, company, menu], sort: outlet_name asc}
+
+- name: DiningTable
+  label: Table
+  label_plural: Tables
+  kind: master
+  module: restaurant
+  title_field: table_name
+  fields:
+    - {name: table_name, type: data, required: true, in_list: true}
+    - {name: outlet, type: link, to: Outlet, required: true, in_list: true, in_filter: true}
+    - {name: seats, type: int, default: 4, min: 1, required: true, in_list: true}
+    - {name: occupied, type: check, read_only: true, no_copy: true, in_list: true, in_filter: true}
+  list: {columns: [table_name, outlet, seats, occupied], sort: table_name asc}
+
+- name: Menu
+  label: Menu
+  label_plural: Menus
+  kind: master
+  module: restaurant
+  title_field: menu_name
+  fields:
+    - {name: menu_name, type: data, required: true, in_list: true}
+    - {name: outlet, type: link, to: Outlet, in_list: true}
+    - {name: dishes, type: table, of: MenuDish}
+  list: {columns: [menu_name, outlet], sort: menu_name asc}
+
+- name: MenuDish
+  label: Dish
+  kind: child
+  fields:
+    - {name: item, type: link, to: Item, required: true, in_list: true}
+    - {name: dish_name, type: data, required: true, in_list: true}
+    - {name: price, type: currency, required: true, in_list: true}
+    - {name: station, type: select, options: [Kitchen, Grill, Bar, Pastry], default: Kitchen, required: true, in_list: true}
+    - {name: available, type: check, default: true, in_list: true}
+
+- name: RestaurantOrder
+  label: Order
+  label_plural: Orders
+  kind: master
+  module: restaurant
+  title_field: order_type
+  description: A table's, a takeaway's or a delivery's order. Its new lines go to the kitchen as tickets by station; billing it makes its invoice.
+  fields:
+    - {name: outlet, type: link, to: Outlet, required: true, in_list: true, in_filter: true}
+    - {name: order_type, type: select, options: [Dine In, Takeaway, Delivery], default: Dine In, required: true, in_list: true, in_filter: true}
+    - {name: table, type: link, to: DiningTable, in_list: true}
+    - {name: guests, type: int, default: 1, min: 1}
+    - {name: customer, type: link, to: Customer}
+    - {name: customer_name, type: data}
+    - {name: phone, type: phone}
+    - {name: delivery_address, type: text}
+    - {name: status, type: select, options: [Open, Billed, Cancelled], default: Open, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: delivery_status, type: select, options: [Not Yet, Out for Delivery, Delivered], read_only: true, no_copy: true, in_list: true}
+    - {name: lines, type: table, of: OrderLine}
+    - {name: total, type: currency, read_only: true, in_list: true}
+    - {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true}
+  actions:
+    - {name: send_to_kitchen, label: Send to the Kitchen, permission: write, condition: "doc.status == 'Open'"}
+    - {name: bill, label: Bill It, permission: write, condition: "doc.status == 'Open'", confirm: "The order closes and its invoice is made. Continue?"}
+    - {name: cancel_order, label: Cancel the Order, permission: write, condition: "doc.status == 'Open'"}
+    - {name: dispatch, label: Out for Delivery, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status != 'Delivered'"}
+    - {name: delivered, label: Delivered, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status == 'Out for Delivery'"}
+  numbering: {template: "ORD-{YYYY}-{seq:6}"}
+  list: {columns: [number, order_type, table, status, total], sort: created_at desc}
+
+- name: OrderLine
+  label: Line
+  kind: child
+  fields:
+    - {name: dish, type: data, required: true, in_list: true, description: "The dish's name on the outlet's menu"}
+    - {name: item, type: link, to: Item, read_only: true}
+    - {name: qty, type: int, default: 1, min: 1, required: true, in_list: true}
+    - {name: price, type: currency, read_only: true, in_list: true}
+    - {name: amount, type: currency, read_only: true, in_list: true}
+    - {name: station, type: data, read_only: true, in_list: true}
+    - {name: note, type: data}
+    - {name: state, type: select, options: [New, Sent, Ready, Served, Void], default: New, in_list: true}
+
+- name: KitchenTicket
+  label: Kitchen Ticket
+  label_plural: Kitchen Tickets
+  kind: master
+  module: restaurant
+  title_field: station
+  description: What one station is to make for one order, from preparing to served.
+  fields:
+    - {name: order, type: link, to: RestaurantOrder, required: true, read_only: true, in_list: true, in_filter: true}
+    - {name: station, type: data, required: true, read_only: true, in_list: true, in_filter: true}
+    - {name: table_label, type: data, read_only: true, in_list: true, label: For}
+    - {name: status, type: select, options: [Queued, Preparing, Ready, Served], default: Queued, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: items, type: table, of: TicketItem, read_only: true}
+  actions:
+    - {name: start, label: Start It, permission: write, condition: "doc.status == 'Queued'"}
+    - {name: ready, label: Ready, permission: write, condition: "doc.status == 'Preparing'"}
+    - {name: served, label: Served, permission: write, condition: "doc.status == 'Ready'"}
+  list: {columns: [order, station, table_label, status], sort: created_at asc}
+
+- name: TicketItem
+  label: Item
+  kind: child
+  fields:
+    - {name: line, type: data, required: true, description: "The order line's id"}
+    - {name: dish, type: data, required: true, in_list: true}
+    - {name: qty, type: int, required: true, in_list: true}
+    - {name: note, type: data, in_list: true}
+
+- name: TableReservation
+  label: Reservation
+  label_plural: Reservations
+  kind: master
+  module: restaurant
+  title_field: guest_name
+  description: A table held for a party at a time. A table holds one party at a time, and no more than it seats.
+  fields:
+    - {name: outlet, type: link, to: Outlet, required: true, in_list: true, in_filter: true}
+    - {name: table, type: link, to: DiningTable, required: true, in_list: true}
+    - {name: guest_name, type: data, required: true, in_list: true}
+    - {name: phone, type: phone}
+    - {name: party, type: int, default: 2, min: 1, required: true, in_list: true}
+    - {name: starts_at, type: datetime, required: true, in_list: true}
+    - {name: ends_at, type: datetime, required: true}
+    - {name: status, type: select, options: [Booked, Seated, Cancelled, No Show], default: Booked, in_list: true, in_filter: true}
+  list: {columns: [starts_at, guest_name, party, table, status], sort: starts_at asc}

@@ -1,0 +1,32 @@
+id: restaurant
+name: Restaurant
+version: 0.1.0
+publisher: cbferrum
+summary: "Tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations"
+description: README.md
+categories: [sales, industry]
+license: AGPL-3.0-only
+homepage: https://github.com/CBFerrum/ferrum-app-restaurant
+support: https://github.com/CBFerrum/ferrum-app-restaurant/issues
+runtime: native
+platform: ">=0.3.2, <0.4"
+# Records of ERP (customers, items, invoices): installing it installs ERP.
+requires: {erp: ">=0.1"}
+packages: [restaurant]
+uninstall: ask
+# Its own interface at /restaurant/: the floor and the kitchen, and the records.
+ui:
+  dist: ui/dist
+contributes:
+  shell.app:
+    - id: restaurant
+      route: restaurant
+      title: Restaurant
+      description: The floor, the kitchen, orders and reservations
+      icon: utensils
+      color: "#b45309"
+      roles: [Restaurant Manager, Server, Kitchen]
+  shell.open:
+    - {id: restaurant, package: restaurant, path: "restaurant/e/{entity}/{id}", list: "restaurant/e/{entity}"}
+  shell.create:
+    - {id: order, label: Order, path: restaurant/e/RestaurantOrder/new, entity: RestaurantOrder}

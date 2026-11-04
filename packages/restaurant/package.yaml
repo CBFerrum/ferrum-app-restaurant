@@ -1,0 +1,47 @@
+package: restaurant
+version: 0.1.0
+label: Restaurant
+description: "A restaurant: tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations"
+depends: [core, selling, accounting]
+
+modules:
+  - name: restaurant
+    label: Restaurant
+    icon: utensils
+    order: 46
+    items: [RestaurantOrder, KitchenTicket, TableReservation, DiningTable, Menu, Outlet]
+
+# Reservations and delivery orders hold a guest's name, phone and address: a retention rule clears
+# them (they are matched by phone, which personal-data requests do not search).
+roles:
+  - name: Restaurant Manager
+    description: Runs the outlets, tables and menus, and sees every order, ticket and reservation.
+    permissions:
+      - {entity: Outlet, read: true, write: true, create: true}
+      - {entity: DiningTable, read: true, write: true, create: true, delete: true}
+      - {entity: Menu, read: true, write: true, create: true, delete: true}
+      - {entity: RestaurantOrder, read: true, write: true, create: true, export: true}
+      - {entity: KitchenTicket, read: true, write: true}
+      - {entity: TableReservation, read: true, write: true, create: true, delete: true}
+      - {entity: Customer, read: true, write: true, create: true}
+      - {entity: Item, read: true}
+      - {entity: Company, read: true}
+      - {entity: SalesInvoice, read: true, create: true}
+  - name: Server
+    description: Takes orders and reservations, sends them to the kitchen and bills them.
+    permissions:
+      - {entity: Outlet, read: true}
+      - {entity: DiningTable, read: true}
+      - {entity: Menu, read: true}
+      - {entity: RestaurantOrder, read: true, write: true, create: true}
+      - {entity: KitchenTicket, read: true}
+      - {entity: TableReservation, read: true, write: true, create: true}
+      - {entity: Customer, read: true}
+      - {entity: Item, read: true}
+      - {entity: SalesInvoice, read: true, create: true}
+  - name: Kitchen
+    description: Works the tickets for their station, from preparing to served.
+    permissions:
+      - {entity: KitchenTicket, read: true, write: true}
+      - {entity: RestaurantOrder, read: true}
+      - {entity: Menu, read: true}
