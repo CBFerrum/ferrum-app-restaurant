@@ -54,6 +54,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.1.1** | Rebuilt with Ferrum-Frontend 80ff179: labels name their fields, and linked titles show their titles. |
 | **0.1.0** | Tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations (FERRUM-INDUSTRY-002). |
 
 ## License
