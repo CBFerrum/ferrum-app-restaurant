@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+Personal-data requests find a guest's table reservations and orders by their phone number, however written, or list them by name; erasure blanks the name, number and delivery address, and the bills keep what they carry (Ferrum's FERRUM-PRIVACY-002).
+
 ## 0.1.2
 
 Rebuilt with Ferrum-Frontend daeadda: after an action runs, a record page shows what the action said it did rather than only that it is done.
