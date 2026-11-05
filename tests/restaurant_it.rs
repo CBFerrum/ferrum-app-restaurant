@@ -5,6 +5,7 @@
 //! than edited, the bill made through ERP and the table freed; a takeaway and a delivery; table
 //! reservations that hold one party at a time within the seats; and who may do what.
 
+use ferrum_kernel::privacy::Person;
 use ferrum_kernel::secret::SecretKey;
 use ferrum_kernel::tenant::NewTenant;
 use ferrum_kernel::{Ctx, Db, DbConfig, Doc, Error, HookRegistry, Kernel, KernelSettings, ListQuery};
@@ -260,4 +261,30 @@ async fn scenario() {
     refused(t.k.insert(&server, "TableReservation", booking(t2, 2, "2026-12-24T19:00:00Z", "2026-12-24T18:00:00Z")).await, "invalid", "after it starts");
     t.k.update(&server, "TableReservation", held, obj(json!({"status": "Cancelled"})), None).await.unwrap();
     t.k.insert(&server, "TableReservation", booking(t2, 1, "2026-12-24T19:30:00Z", "2026-12-24T20:30:00Z")).await.expect("a cancelled booking frees the table");
+
+    // ───────────── a guest's request ─────────────
+    // Bo is known by a number only: the delivery and a table booked under it, written another way,
+    // are hers; erasure blanks the name, number and address, and the order stays.
+    let bo_booked = uid(&t
+        .k
+        .insert(
+            &server,
+            "TableReservation",
+            obj(json!({"outlet": outlet.to_string(), "table": t2.to_string(), "guest_name": "Bo", "phone": "+91-98000-00000", "party": 2,
+                       "starts_at": "2026-12-26T19:00:00Z", "ends_at": "2026-12-26T21:00:00Z"})),
+        )
+        .await
+        .expect("booked")["id"]);
+    let bo = Person { email: "bo@nowhere.test".into(), phone: Some("+919800000000".into()), name: None };
+    let asked = t.k.personal_data_of(&t.admin, &bo).await.unwrap();
+    let mut found: Vec<String> = asked["records"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
+    found.sort();
+    let mut hers = vec![delivery.to_string(), bo_booked.to_string()];
+    hers.sort();
+    assert_eq!(found, hers, "{asked}");
+    let erased = t.k.erase_personal_data_of(&t.admin, &bo, "Request 1").await.unwrap();
+    assert_eq!(erased["erased"].as_array().unwrap().len(), 2, "{erased}");
+    let order = t.get("RestaurantOrder", delivery).await;
+    assert!(order["phone"].is_null() && order["delivery_address"].is_null() && order["customer_name"] != "Bo", "{order:?}");
+    assert_eq!(order["delivery_status"], "Delivered", "the order stays");
 }
