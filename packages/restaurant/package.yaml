@@ -45,3 +45,7 @@ roles:
       - {entity: KitchenTicket, read: true, write: true}
       - {entity: RestaurantOrder, read: true}
       - {entity: Menu, read: true}
+
+personal_data:
+  - {entity: TableReservation, match: phone, phone: phone, name: guest_name, erase: [guest_name, phone]}
+  - {entity: RestaurantOrder, match: phone, phone: phone, name: customer_name, erase: [customer_name, phone, delivery_address]}
