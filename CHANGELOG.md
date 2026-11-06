@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+What walking an evening through the pages found:
+- A line voided after it went to the kitchen stayed on its ticket, so the kitchen would still make it. It is now struck off the ticket, and a ticket left with nothing to make is Voided and leaves the kitchen's page.
+- A line's state could be set by hand: a sent dish back to New, to be sent again, or Served without the kitchen. Only the kitchen moves a line on now; a person voids it.
+- A delivery could go out before its food had gone to the kitchen. It goes out once each dish is ready or served.
+- A free table on the floor opened an order with nothing filled in. It opens one for that table and its outlet. The floor starts a takeaway or a delivery too, and an empty restaurant says what to set up first.
+- A dish typed in another case kept it on the ticket and the bill. It is written as the menu writes it.
+- Actions said only "done". Each says what it did: where an order was sent, what it was billed, a ticket's step.
+- A ticket for "Table 1" read "Table Table 1". An order was named by its type ("Dine In") wherever it was linked. It is named by its number, and is found by its guest's name or phone.
+- On an order's page, a sent line's dish, quantity and note are read-only, a table's fields show for dine-in only, and a delivery's for deliveries.
+- A reservation ending before it starts says it "must be after it starts".
+
 ## 0.1.7
 
 Rebuilt with Ferrum-Frontend a76295e: its pages show times on a person's own clock when they chose one on their Account page, while today and due dates stay on the workspace's day.

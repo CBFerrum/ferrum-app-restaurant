@@ -52,19 +52,19 @@
   label_plural: Orders
   kind: master
   module: restaurant
-  title_field: order_type
-  description: A table's, a takeaway's or a delivery's order. Its new lines go to the kitchen as tickets by station; billing it makes its invoice.
+  search_fields: [customer_name, phone]
+  description: A table's, a takeaway's or a delivery's order, named by its number. Its new lines go to the kitchen as tickets by station; billing it makes its invoice.
   fields:
     - {name: outlet, type: link, to: Outlet, required: true, in_list: true, in_filter: true}
     - {name: order_type, type: select, options: [Dine In, Takeaway, Delivery], default: Dine In, required: true, in_list: true, in_filter: true}
-    - {name: table, type: link, to: DiningTable, in_list: true}
-    - {name: guests, type: int, default: 1, min: 1}
+    - {name: table, type: link, to: DiningTable, in_list: true, visible_if: "doc.order_type == 'Dine In'"}
+    - {name: guests, type: int, default: 1, min: 1, visible_if: "doc.order_type == 'Dine In'"}
     - {name: customer, type: link, to: Customer}
     - {name: customer_name, type: data}
     - {name: phone, type: phone}
-    - {name: delivery_address, type: text}
+    - {name: delivery_address, type: text, visible_if: "doc.order_type == 'Delivery'"}
     - {name: status, type: select, options: [Open, Billed, Cancelled], default: Open, read_only: true, no_copy: true, in_list: true, in_filter: true}
-    - {name: delivery_status, type: select, options: [Not Yet, Out for Delivery, Delivered], read_only: true, no_copy: true, in_list: true}
+    - {name: delivery_status, type: select, options: [Not Yet, Out for Delivery, Delivered], read_only: true, no_copy: true, in_list: true, visible_if: "doc.order_type == 'Delivery'"}
     - {name: lines, type: table, of: OrderLine}
     - {name: total, type: currency, read_only: true, in_list: true}
     - {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true}
@@ -81,14 +81,14 @@
   label: Line
   kind: child
   fields:
-    - {name: dish, type: data, required: true, in_list: true, description: "The dish's name on the outlet's menu"}
+    - {name: dish, type: data, required: true, in_list: true, description: "The dish's name on the outlet's menu", read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
     - {name: item, type: link, to: Item, read_only: true}
-    - {name: qty, type: int, default: 1, min: 1, required: true, in_list: true}
+    - {name: qty, type: int, default: 1, min: 1, required: true, in_list: true, read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
     - {name: price, type: currency, read_only: true, in_list: true}
     - {name: amount, type: currency, read_only: true, in_list: true}
     - {name: station, type: data, read_only: true, in_list: true}
-    - {name: note, type: data}
-    - {name: state, type: select, options: [New, Sent, Ready, Served, Void], default: New, in_list: true}
+    - {name: note, type: data, read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
+    - {name: state, type: select, options: [New, Sent, Ready, Served, Void], default: New, in_list: true, description: "The kitchen moves it on; set Void to take it off"}
 
 - name: KitchenTicket
   label: Kitchen Ticket
@@ -96,12 +96,12 @@
   kind: master
   module: restaurant
   title_field: station
-  description: What one station is to make for one order, from preparing to served.
+  description: What one station is to make for one order, from preparing to served. A line voided on the order is struck off it, and a ticket with nothing left to make is Voided.
   fields:
     - {name: order, type: link, to: RestaurantOrder, required: true, read_only: true, in_list: true, in_filter: true}
     - {name: station, type: data, required: true, read_only: true, in_list: true, in_filter: true}
     - {name: table_label, type: data, read_only: true, in_list: true, label: For}
-    - {name: status, type: select, options: [Queued, Preparing, Ready, Served], default: Queued, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: status, type: select, options: [Queued, Preparing, Ready, Served, Voided], default: Queued, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: items, type: table, of: TicketItem, read_only: true}
   actions:
     - {name: start, label: Start It, permission: write, condition: "doc.status == 'Queued'"}
@@ -117,6 +117,7 @@
     - {name: dish, type: data, required: true, in_list: true}
     - {name: qty, type: int, required: true, in_list: true}
     - {name: note, type: data, in_list: true}
+    - {name: voided, type: check, read_only: true, in_list: true, description: "Voided on the order: not to be made"}
 
 - name: TableReservation
   label: Reservation
