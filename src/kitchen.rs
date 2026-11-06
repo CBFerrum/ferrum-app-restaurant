@@ -1,5 +1,6 @@
 //! Kitchen tickets: a station's part of an order goes from queued through preparing and ready to
-//! served, and the order's lines on the ticket follow it (ready, then served).
+//! served, and the order's lines on the ticket follow it (ready, then served). A line voided on the
+//! order is struck off its ticket there (`orders::strike`).
 
 use crate::obj;
 use async_trait::async_trait;
@@ -34,6 +35,11 @@ impl DocHook for TicketHook {
             }
             hc.kernel.update_tx(&system, hc.tx, "RestaurantOrder", order, obj(json!({"lines": lines})), None).await?;
         }
-        Ok(Some(json!({"status": to})))
+        let what = match to {
+            "Preparing" => "Preparing",
+            "Ready" => "Ready",
+            _ => "Served",
+        };
+        Ok(Some(json!({"status": to, "message": format!("{what} for {}", s(doc, "table_label").unwrap_or("the order"))})))
     }
 }
