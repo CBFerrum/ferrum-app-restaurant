@@ -1,7 +1,8 @@
 //! Orders: lines priced from the outlet's menu when they are taken (ERPNext 12's Restaurant Order
 //! Entry priced from the active menu the same way); one open order to a table; new lines sent to the
-//! kitchen as one ticket for each station; what went to the kitchen is voided rather than edited;
-//! billing makes the invoice through ERP and frees the table; a delivery goes out, then arrives.
+//! kitchen as one ticket for each station; what went to the kitchen is voided rather than edited,
+//! and a voided line is struck off its ticket; billing makes the invoice through ERP and frees the
+//! table; a delivery goes out once the kitchen has made it, then arrives.
 
 use crate::obj;
 use async_trait::async_trait;
@@ -15,10 +16,10 @@ use uuid::Uuid;
 
 pub struct OrderHook;
 
-/// A dish of the outlet's active menu: (item, price, station, available).
-async fn dish(tx: &mut Tx, tenant: Uuid, outlet: Uuid, name: &str) -> Result<Option<(Uuid, Decimal, String, bool)>> {
+/// A dish of the outlet's active menu: (item, price, station, available, its name on the menu).
+async fn dish(tx: &mut Tx, tenant: Uuid, outlet: Uuid, name: &str) -> Result<Option<(Uuid, Decimal, String, bool, String)>> {
     Ok(sqlx::query_as(
-        "select m.item, m.price, m.station, coalesce(m.available, false) from e_outlet o join e_menu__dishes m on m.tenant_id = o.tenant_id and m.parent_id = o.menu \
+        "select m.item, m.price, m.station, coalesce(m.available, false), m.dish_name from e_outlet o join e_menu__dishes m on m.tenant_id = o.tenant_id and m.parent_id = o.menu \
          where o.tenant_id = $1 and o.id = $2 and lower(m.dish_name) = lower($3) limit 1",
     )
     .bind(tenant)
@@ -58,11 +59,13 @@ impl DocHook for OrderHook {
             // A line is priced once, when it is taken.
             if l.get("price").is_none_or(Value::is_null) {
                 let name = s(l, "dish").unwrap_or_default().to_string();
-                let (item, price, station, available) =
+                let (item, price, station, available, named) =
                     dish(hc.tx, hc.ctx.tenant, outlet, &name).await?.ok_or_else(|| Error::field("lines", format!("{name} is not on the menu")))?;
                 if !available {
                     return Err(Error::field("lines", format!("{name} is not available today")));
                 }
+                // As the menu writes it, so the ticket and the bill read the same.
+                set(l, "dish", json!(named));
                 set(l, "item", json!(item.to_string()));
                 set(l, "price", money(price));
                 set(l, "station", json!(station));
@@ -83,6 +86,19 @@ impl DocHook for OrderHook {
 
     async fn validate_change(&self, hc: &mut HookCtx<'_>, old: Option<&Doc>, doc: &Doc) -> Result<()> {
         let tenant = hc.ctx.tenant;
+        if !hc.ctx.is_system {
+            // A line's state is the kitchen's to move on; a person only voids it.
+            let was: BTreeMap<String, String> = old
+                .map(|o| rows(o, "lines").iter().filter_map(|l| Some((s(l, "id")?.to_string(), s(l, "state").unwrap_or("New").to_string()))).collect())
+                .unwrap_or_default();
+            for l in rows(doc, "lines") {
+                let (dish, now) = (s(&l, "dish").unwrap_or("A dish"), s(&l, "state").unwrap_or("New"));
+                let before = s(&l, "id").and_then(|i| was.get(i)).map(String::as_str).unwrap_or("New");
+                if now != before && now != "Void" {
+                    return Err(Error::field("lines", format!("{dish} is {}: the kitchen moves it on, and Void takes it off", before.to_lowercase())));
+                }
+            }
+        }
         if let Some(o) = old
             && !hc.ctx.is_system
         {
@@ -138,6 +154,7 @@ impl DocHook for OrderHook {
     }
 
     async fn after_save(&self, hc: &mut HookCtx<'_>, doc: &Doc, old: Option<&Doc>) -> Result<()> {
+        strike(hc, doc, old).await?;
         if s(doc, "order_type") != Some("Dine In") {
             return Ok(());
         }
@@ -161,17 +178,21 @@ impl DocHook for OrderHook {
                     return Err(Error::invalid("some of it went to the kitchen: bill it, or void those lines first"));
                 }
                 finish(hc, doc, json!({"status": "Cancelled"})).await?;
-                Ok(Some(json!({"status": "Cancelled"})))
+                Ok(Some(json!({"status": "Cancelled", "message": format!("{} is cancelled", s(doc, "number").unwrap_or("The order"))})))
             }
             "dispatch" => {
+                // A delivery goes out with its food: each dish made at its station first.
+                if let Some(l) = rows(doc, "lines").iter().find(|l| !matches!(s(l, "state"), Some("Ready" | "Served" | "Void"))) {
+                    return Err(Error::invalid(format!("{} is not ready yet: send it to the kitchen and wait for it", s(l, "dish").unwrap_or("A dish"))));
+                }
                 let order = id(doc, "id").ok_or_else(|| Error::internal("an order without an id"))?;
                 hc.kernel.set_values_tx(&elevated(hc.ctx), hc.tx, "RestaurantOrder", order, obj(json!({"delivery_status": "Out for Delivery"}))).await?;
-                Ok(Some(json!({"delivery_status": "Out for Delivery"})))
+                Ok(Some(json!({"delivery_status": "Out for Delivery", "message": format!("{} is out for delivery", s(doc, "number").unwrap_or("The order"))})))
             }
             "delivered" => {
                 let order = id(doc, "id").ok_or_else(|| Error::internal("an order without an id"))?;
                 hc.kernel.set_values_tx(&elevated(hc.ctx), hc.tx, "RestaurantOrder", order, obj(json!({"delivery_status": "Delivered"}))).await?;
-                Ok(Some(json!({"delivery_status": "Delivered"})))
+                Ok(Some(json!({"delivery_status": "Delivered", "message": format!("{} is delivered", s(doc, "number").unwrap_or("The order"))})))
             }
             _ => Ok(None),
         }
@@ -203,6 +224,7 @@ async fn send(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
     if by_station.is_empty() {
         return Err(Error::invalid("nothing new to send to the kitchen"));
     }
+    let stations: Vec<String> = by_station.keys().cloned().collect();
     let system = elevated(hc.ctx);
     let label = match (s(doc, "order_type"), id(doc, "table")) {
         (Some("Dine In"), Some(table)) => {
@@ -211,7 +233,9 @@ async fn send(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
                 .bind(table)
                 .fetch_optional(&mut **hc.tx)
                 .await?;
-            format!("Table {}", name.unwrap_or_default())
+            // A table named "Table 4" is not "Table Table 4".
+            let name = name.unwrap_or_default();
+            if name.to_lowercase().starts_with("table") { name } else { format!("Table {name}") }
         }
         (kind, _) => format!("{} {}", kind.unwrap_or("Order"), s(doc, "number").unwrap_or_default()),
     };
@@ -229,7 +253,49 @@ async fn send(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
         tickets.push(created("KitchenTicket", &t));
     }
     hc.kernel.update_tx(&system, hc.tx, "RestaurantOrder", order, obj(json!({"lines": lines})), None).await?;
-    Ok(json!({"tickets": tickets}))
+    let to = match stations.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => stations.concat(),
+    };
+    Ok(json!({"tickets": tickets, "message": format!("Sent to {to}, for {label}")}))
+}
+
+/// The lines voided by this save that had gone to the kitchen are struck off their tickets still
+/// to be served, and a ticket with nothing left to make is Voided: the kitchen stops making it.
+async fn strike(hc: &mut HookCtx<'_>, doc: &Doc, old: Option<&Doc>) -> Result<()> {
+    let Some(old) = old else { return Ok(()) };
+    let sent_before: Vec<String> = sent(old).into_iter().map(|(i, _, _)| i).collect();
+    let voided: Vec<String> = rows(doc, "lines")
+        .iter()
+        .filter(|l| s(l, "state") == Some("Void"))
+        .filter_map(|l| s(l, "id").map(str::to_string))
+        .filter(|i| sent_before.contains(i) && rows(old, "lines").iter().any(|o| s(o, "id") == Some(i.as_str()) && s(o, "state") != Some("Void")))
+        .collect();
+    let Some(order) = id(doc, "id").filter(|_| !voided.is_empty()) else { return Ok(()) };
+    let system = elevated(hc.ctx);
+    let open: Vec<Uuid> =
+        sqlx::query_scalar("select id from e_kitchen_ticket where tenant_id = $1 and \"order\" = $2 and status in ('Queued', 'Preparing', 'Ready')")
+            .bind(hc.ctx.tenant)
+            .bind(order)
+            .fetch_all(&mut **hc.tx)
+            .await?;
+    for ticket in open {
+        let t = hc.kernel.get_tx(&system, hc.tx, "KitchenTicket", ticket, false).await?;
+        let mut items = rows(&t, "items");
+        if !items.iter().any(|i| s(i, "line").is_some_and(|l| voided.iter().any(|v| v == l))) {
+            continue;
+        }
+        for i in items.iter_mut().filter(|i| s(i, "line").is_some_and(|l| voided.iter().any(|v| v == l))) {
+            set(i, "voided", json!(true));
+        }
+        let left = items.iter().any(|i| i.get("voided") != Some(&json!(true)));
+        let mut values = json!({"items": items});
+        if !left {
+            values["status"] = json!("Voided");
+        }
+        hc.kernel.update_tx(&system, hc.tx, "KitchenTicket", ticket, obj(values), None).await?;
+    }
+    Ok(())
 }
 
 /// `bill`: the order's invoice through ERP, its lines but the voided ones, to its customer or the
@@ -264,5 +330,7 @@ async fn bill(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
     )
     .await?;
     finish(hc, doc, json!({"status": "Billed", "sales_invoice": inv.get("id").cloned().unwrap_or(Value::Null)})).await?;
-    Ok(json!({"status": "Billed", "sales_invoice": created("SalesInvoice", &inv)}))
+    let total = inv.get("grand_total").and_then(Value::as_str).unwrap_or_default().to_string();
+    let freed = if s(doc, "order_type") == Some("Dine In") { "; the table is free" } else { "" };
+    Ok(json!({"status": "Billed", "sales_invoice": created("SalesInvoice", &inv), "message": format!("Billed {total}: a draft invoice in ERP{freed}")}))
 }

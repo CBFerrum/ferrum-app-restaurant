@@ -164,6 +164,7 @@ async fn scenario() {
             .await
             .expect("an order");
     assert_eq!(dec(&first["total"]), 1040.0, "2 × 320 + 220 + 2 × 90, priced from the menu");
+    assert!(first["lines"].as_array().unwrap().iter().any(|l| l["dish"] == "Dal Makhani"), "written as the menu writes it");
     let oid = uid(&first["id"]);
     assert!(t.get("DiningTable", t1).await["occupied"].as_bool().unwrap(), "the table is taken");
     refused(t.k.insert(&server, "RestaurantOrder", order(Some(t1), "Dine In", &[("Lime Soda", 1)], json!({}))).await, "invalid", "has an open order");
@@ -172,6 +173,7 @@ async fn scenario() {
     // To the kitchen: a ticket for each station.
     let sent = t.k.run_action(&server, "RestaurantOrder", oid, "send_to_kitchen", Value::Null).await.expect("sent");
     assert_eq!(sent["tickets"].as_array().unwrap().len(), 3);
+    assert_eq!(sent["message"], "Sent to Bar, Grill and Kitchen, for Table 1");
     let tickets = t.find("KitchenTicket", json!({"order": oid.to_string()})).await;
     let mut stations: Vec<String> = tickets.iter().map(|x| x["station"].as_str().unwrap().to_string()).collect();
     stations.sort();
@@ -179,6 +181,13 @@ async fn scenario() {
     refused(t.k.run_action(&server, "RestaurantOrder", oid, "send_to_kitchen", Value::Null).await, "invalid", "nothing new");
     let now = t.get("RestaurantOrder", oid).await;
     assert!(lines(&now).iter().all(|(_, _, st)| st == "Sent"));
+    // A line's state is the kitchen's to move on: a person only voids it.
+    let mut by_hand = now["lines"].as_array().unwrap().clone();
+    by_hand[0]["state"] = json!("Served");
+    refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": by_hand})), None).await, "invalid", "the kitchen moves it on");
+    let mut again = now["lines"].as_array().unwrap().clone();
+    again[0]["state"] = json!("New");
+    refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": again})), None).await, "invalid", "the kitchen moves it on");
     // A sent line is voided, not edited; another dish comes as a line of its own.
     let mut changed = now["lines"].as_array().unwrap().clone();
     changed[0]["qty"] = json!(3);
@@ -202,6 +211,12 @@ async fn scenario() {
     }
     let voided = t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": voided})), None).await.expect("the sodas voided");
     assert_eq!(dec(&voided["total"]), 1080.0, "a voided line is not charged");
+    // The bar is told: its ticket had only the sodas, so it has nothing left to make.
+    let bar = t.get("KitchenTicket", uid(&t.find("KitchenTicket", json!({"order": oid.to_string(), "station": "Bar"})).await[0]["id"])).await;
+    assert_eq!(bar["status"], "Voided", "{bar:?}");
+    assert!(bar["items"].as_array().unwrap().iter().all(|i| i["voided"] == true), "{bar:?}");
+    let grill_before = t.get("KitchenTicket", uid(&t.find("KitchenTicket", json!({"order": oid.to_string(), "station": "Grill"})).await[0]["id"])).await;
+    assert_eq!(grill_before["status"], "Queued", "the grill's ticket is untouched");
     let sent = t.k.run_action(&server, "RestaurantOrder", oid, "send_to_kitchen", Value::Null).await.expect("the new dal sent");
     assert_eq!(sent["tickets"].as_array().unwrap().len(), 1);
 
@@ -219,6 +234,7 @@ async fn scenario() {
 
     // The bill.
     let billed = t.k.run_action(&server, "RestaurantOrder", oid, "bill", Value::Null).await.expect("billed");
+    assert!(billed["message"].as_str().unwrap().ends_with("a draft invoice in ERP; the table is free"), "{billed}");
     let inv = t.get("SalesInvoice", uid(&billed["sales_invoice"]["id"])).await;
     assert_eq!(inv["customer"].as_str(), Some(walk_in.to_string().as_str()));
     let mut billed_lines: Vec<(String, f64, f64)> =
@@ -246,7 +262,16 @@ async fn scenario() {
         )
         .await["id"]);
     refused(t.k.run_action(&server, "RestaurantOrder", delivery, "delivered", Value::Null).await, "invalid", "not available");
-    t.k.run_action(&server, "RestaurantOrder", delivery, "dispatch", Value::Null).await.unwrap();
+    // It goes out with its food: made at the grill first.
+    refused(t.k.run_action(&server, "RestaurantOrder", delivery, "dispatch", Value::Null).await, "invalid", "Paneer Tikka is not ready yet");
+    t.k.run_action(&server, "RestaurantOrder", delivery, "send_to_kitchen", Value::Null).await.unwrap();
+    let made = uid(&t.find("KitchenTicket", json!({"order": delivery.to_string()})).await[0]["id"]);
+    t.k.run_action(&cook, "KitchenTicket", made, "start", Value::Null).await.unwrap();
+    refused(t.k.run_action(&server, "RestaurantOrder", delivery, "dispatch", Value::Null).await, "invalid", "is not ready yet");
+    let ready = t.k.run_action(&cook, "KitchenTicket", made, "ready", Value::Null).await.unwrap();
+    assert!(ready["message"].as_str().unwrap().starts_with("Ready for Delivery"), "{ready}");
+    let out = t.k.run_action(&server, "RestaurantOrder", delivery, "dispatch", Value::Null).await.unwrap();
+    assert!(out["message"].as_str().unwrap().ends_with("is out for delivery"), "{out}");
     t.k.run_action(&server, "RestaurantOrder", delivery, "delivered", Value::Null).await.unwrap();
     assert_eq!(t.get("RestaurantOrder", delivery).await["delivery_status"], "Delivered");
 

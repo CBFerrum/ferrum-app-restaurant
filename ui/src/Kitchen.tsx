@@ -1,4 +1,5 @@
 // The kitchen: tickets not yet served, oldest first, by station, each moved on from where it is.
+// A dish voided on its order is struck off, not to be made.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, docPath, refusal } from "@ferrum/client";
@@ -8,8 +9,8 @@ interface Ticket {
   id: string;
   station: string;
   table_label: string;
-  status: "Queued" | "Preparing" | "Ready" | "Served";
-  items?: { dish: string; qty: number; note?: string | null }[];
+  status: "Queued" | "Preparing" | "Ready" | "Served" | "Voided";
+  items?: { dish: string; qty: number; note?: string | null; voided?: boolean | null }[];
 }
 
 /** What a ticket's next step is, from its status. */
@@ -18,6 +19,7 @@ export const NEXT: Record<Ticket["status"], { action: string; label: string } | 
   Preparing: { action: "ready", label: "Ready" },
   Ready: { action: "served", label: "Served" },
   Served: null,
+  Voided: null,
 };
 
 export function Kitchen() {
@@ -54,7 +56,18 @@ export function Kitchen() {
               <ul>
                 {(t.items ?? []).map((i, n) => (
                   <li key={n}>
-                    {i.qty} × {i.dish} {i.note ? <span className="faint">({i.note})</span> : null}
+                    {i.voided ? (
+                      <span className="faint">
+                        <s>
+                          {i.qty} × {i.dish}
+                        </s>{" "}
+                        (voided)
+                      </span>
+                    ) : (
+                      <>
+                        {i.qty} × {i.dish} {i.note ? <span className="faint">({i.note})</span> : null}
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

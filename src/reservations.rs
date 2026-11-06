@@ -24,7 +24,7 @@ impl DocHook for ReservationHook {
         let tenant = hc.ctx.tenant;
         let (from, to) = (at(doc, "starts_at")?, at(doc, "ends_at")?);
         if to <= from {
-            return Err(Error::field("ends_at", "is after it starts"));
+            return Err(Error::field("ends_at", "must be after it starts"));
         }
         let table = id(doc, "table").ok_or_else(|| Error::field("table", "is required"))?;
         let row: Option<(Option<Uuid>, i64)> = sqlx::query_as("select outlet, seats from e_dining_table where tenant_id = $1 and id = $2")
