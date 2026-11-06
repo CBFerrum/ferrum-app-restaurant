@@ -22,11 +22,16 @@ A restaurant for [Ferrum](https://github.com/CBFerrum/Ferrum):
   bar, pastry) with its new lines. A ticket goes from queued through preparing and ready to served,
   and the order's lines follow it.
 - **What went to the kitchen is voided, not edited.** A sent line cannot be changed or removed. It
-  is voided and the dish ordered again, and a voided line is neither charged nor billed. An order
-  with something sent cannot be cancelled: bill it, or void those lines first.
+  is voided and the dish ordered again, and a voided line is neither charged nor billed. It is
+  struck off its ticket in the kitchen, and a ticket left with nothing to make is Voided. A line's
+  state is the kitchen's to move on: a person only voids it. An order with something sent cannot be
+  cancelled: bill it, or void those lines first.
 - **Bills through ERP.** Billing makes a draft Sales Invoice of the order's lines, to its customer or
   the outlet's walk-in customer. The order closes and the table is free.
-- **Takeaway and delivery.** A delivery needs an address and a phone, and goes out, then arrives.
+- **Takeaway and delivery.** Started from the floor. A delivery needs an address and a phone, goes
+  out once the kitchen has made each dish, then arrives.
+- **The floor starts an order.** A free table opens a new order for that table and its outlet; an
+  empty restaurant says what to set up first. Each action says what it did.
 - **Reservations.** A table holds one party at a time, and no more than it seats. A cancelled booking
   frees the time.
 
@@ -54,6 +59,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.2.0** | What walking an evening found: a voided dish is struck off its kitchen ticket; a line's state only the kitchen moves on; a delivery goes out once made; the floor starts an order for its table, a takeaway or a delivery; dishes named as the menu writes them; actions say what they did. |
 | **0.1.7** | Rebuilt with Ferrum-Frontend a76295e: times on a person's own clock when they chose one. |
 | **0.1.6** | Rebuilt with Ferrum-Frontend 24c3951: times on the workspace's clock; drafts headed as drafts. |
 | **0.1.5** | Rebuilt with Ferrum-Frontend bb60115: empty numbers read as the server reads them; settings open as their record. |
