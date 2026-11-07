@@ -2,7 +2,7 @@
 // A dish voided on its order is struck off, not to be made.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, docPath, refusal } from "@ferrum/client";
+import { api, docPath, refusal, t as tr } from "@ferrum/client";
 import { Badge, Button, ErrorState, PageLoading, toast, useShellTitle } from "@ferrum/kit";
 
 interface Ticket {
@@ -42,7 +42,7 @@ export function Kitchen() {
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   return (
     <div className="np-page">
-      <h2>The kitchen</h2>
+      <h2>{tr("The kitchen")}</h2>
       <div className="np-columns">
         {q.data.map((t) => {
           const next = NEXT[t.status];
@@ -61,7 +61,7 @@ export function Kitchen() {
                         <s>
                           {i.qty} × {i.dish}
                         </s>{" "}
-                        (voided)
+                        {tr("(voided)")}
                       </span>
                     ) : (
                       <>
