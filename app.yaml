@@ -1,6 +1,6 @@
 id: restaurant
 name: Restaurant
-version: 0.2.2
+version: 0.2.3
 publisher: cbferrum
 summary: "Tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations"
 description: README.md
