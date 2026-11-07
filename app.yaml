@@ -1,6 +1,6 @@
 id: restaurant
 name: Restaurant
-version: 0.2.5
+version: 0.2.6
 publisher: cbferrum
 summary: "Tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations"
 description: README.md
@@ -30,3 +30,15 @@ contributes:
     - {id: restaurant, package: restaurant, path: "restaurant/e/{entity}/{id}", list: "restaurant/e/{entity}"}
   shell.create:
     - {id: order, label: Order, path: restaurant/e/RestaurantOrder/new, entity: RestaurantOrder}
+  # What the assistant should know in Restaurant's pages, and what it suggests asking there.
+  shell.assistant:
+    - id: restaurant
+      title: "Restaurant"
+      instructions: >-
+        A RestaurantOrder (Open, Billed, Cancelled) is for a table, a takeaway or a delivery. Its lines go to the
+        kitchen as KitchenTicket by station (Queued, Preparing, Ready, Served, Voided), and its bill is an ERP
+        invoice. A TableReservation is Booked, Seated, Cancelled or No Show.
+      suggestions:
+        - "Which tables are taken now?"
+        - "What sold best this week?"
+        - "How many reservations do we have tonight?"
