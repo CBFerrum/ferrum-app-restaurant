@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api, docPath } from "@ferrum/client";
+import { api, docPath, t as tr } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
 
 interface Row {
@@ -57,10 +57,10 @@ export function Home() {
   if (!q.data.tables.length)
     return (
       <div className="np-page">
-        <EmptyState title="No tables yet" icon="list">
+        <EmptyState title={tr("No tables yet")} icon="list">
           <p className="muted">
-            Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.{" "}
-            {q.data.outlets.length ? <Link to="/e/DiningTable/new">Add a table</Link> : <Link to="/e/Outlet/new">Add an outlet</Link>}
+            {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}{" "}
+            {q.data.outlets.length ? <Link to="/e/DiningTable/new">{tr("Add a table")}</Link> : <Link to="/e/Outlet/new">{tr("Add an outlet")}</Link>}
           </p>
         </EmptyState>
       </div>
@@ -68,11 +68,11 @@ export function Home() {
   return (
     <div className="np-page">
       <header className="row" style={{ justifyContent: "space-between" }}>
-        <h2>The floor</h2>
+        <h2>{tr("The floor")}</h2>
         <span className="row">
-          <Link to={awayLink("Takeaway", q.data.outlets)}>New takeaway</Link>
-          <Link to={awayLink("Delivery", q.data.outlets)}>New delivery</Link>
-          <Link to="/kitchen">The kitchen</Link>
+          <Link to={awayLink("Takeaway", q.data.outlets)}>{tr("New takeaway")}</Link>
+          <Link to={awayLink("Delivery", q.data.outlets)}>{tr("New delivery")}</Link>
+          <Link to="/kitchen">{tr("The kitchen")}</Link>
         </span>
       </header>
       <div className="np-columns">
@@ -82,13 +82,13 @@ export function Home() {
             <Link key={t.id} className="card card-pad stack" to={tableLink(t, order)}>
               <strong>{String(t.table_name)}</strong>
               <span className="faint">{String(t.seats)} seats</span>
-              {order ? <Badge tone="amber">{`Taken · ${String(order.number ?? "")}`}</Badge> : <Badge tone="green">Free</Badge>}
+              {order ? <Badge tone="amber">{`Taken · ${String(order.number ?? "")}`}</Badge> : <Badge tone="green">{tr("Free")}</Badge>}
             </Link>
           );
         })}
       </div>
-      <section className="card card-pad stack" aria-label="Takeaway and delivery">
-        <h3>Takeaway and delivery ({away.length})</h3>
+      <section className="card card-pad stack" aria-label={tr("Takeaway and delivery")}>
+        <h3>{tr("Takeaway and delivery ({length})", { length: away.length })}</h3>
         <ul className="stack">
           {away.map((o) => (
             <li key={o.id}>
