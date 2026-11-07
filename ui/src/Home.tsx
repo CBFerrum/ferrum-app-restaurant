@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api, docPath, t as tr } from "@ferrum/client";
+import { api, docPath, t as tr, isolate } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
 
 interface Row {
@@ -37,7 +37,7 @@ export function byTable(orders: Row[]): Map<string, Row> {
 }
 
 export function Home() {
-  useShellTitle("Restaurant");
+  useShellTitle(tr("Restaurant"));
   const q = useQuery({
     queryKey: ["restaurant", "floor"],
     queryFn: async () => {
@@ -59,7 +59,7 @@ export function Home() {
       <div className="np-page">
         <EmptyState title={tr("No tables yet")} icon="list">
           <p className="muted">
-            {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}{" "}
+            {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}{isolate(" ")}
             {q.data.outlets.length ? <Link to="/e/DiningTable/new">{tr("Add a table")}</Link> : <Link to="/e/Outlet/new">{tr("Add an outlet")}</Link>}
           </p>
         </EmptyState>
@@ -80,9 +80,9 @@ export function Home() {
           const order = open.get(t.id);
           return (
             <Link key={t.id} className="card card-pad stack" to={tableLink(t, order)}>
-              <strong>{String(t.table_name)}</strong>
-              <span className="faint">{String(t.seats)} seats</span>
-              {order ? <Badge tone="amber">{`Taken · ${String(order.number ?? "")}`}</Badge> : <Badge tone="green">{tr("Free")}</Badge>}
+              <strong>{isolate(String(t.table_name))}</strong>
+              <span className="faint">{tr("{value} seats", { value: String(t.seats) })}</span>
+              {order ? <Badge tone="amber">{tr("Taken · {value}", { value: String(order.number ?? "") })}</Badge> : <Badge tone="green">{tr("Free")}</Badge>}
             </Link>
           );
         })}
@@ -93,7 +93,7 @@ export function Home() {
           {away.map((o) => (
             <li key={o.id}>
               <Link to={`/e/RestaurantOrder/${o.id}`}>
-                {String(o.number ?? "")} · {String(o.order_type)} {o.delivery_status ? `· ${String(o.delivery_status)}` : ""}
+                {isolate(String(o.number ?? ""))} · {isolate(String(o.order_type))} {o.delivery_status ? `· ${String(o.delivery_status)}` : ""}
               </Link>
             </li>
           ))}
