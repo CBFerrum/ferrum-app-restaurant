@@ -2,7 +2,7 @@
 // A dish voided on its order is struck off, not to be made.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, docPath, refusal, t as tr } from "@ferrum/client";
+import { api, docPath, refusal, t as tr, isolate } from "@ferrum/client";
 import { Badge, Button, ErrorState, PageLoading, toast, useShellTitle } from "@ferrum/kit";
 
 interface Ticket {
@@ -15,15 +15,15 @@ interface Ticket {
 
 /** What a ticket's next step is, from its status. */
 export const NEXT: Record<Ticket["status"], { action: string; label: string } | null> = {
-  Queued: { action: "start", label: "Start it" },
-  Preparing: { action: "ready", label: "Ready" },
-  Ready: { action: "served", label: "Served" },
+  Queued: { action: "start", get label() { return tr("Start it"); } },
+  Preparing: { action: "ready", get label() { return tr("Ready"); } },
+  Ready: { action: "served", get label() { return tr("Served"); } },
   Served: null,
   Voided: null,
 };
 
 export function Kitchen() {
-  useShellTitle("Kitchen");
+  useShellTitle(tr("Kitchen"));
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["restaurant", "kitchen"],
@@ -49,23 +49,23 @@ export function Kitchen() {
           return (
             <section key={t.id} className="card card-pad stack" aria-label={`${t.station}, ${t.table_label}`}>
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <strong>{t.station}</strong>
-                <Badge tone={t.status === "Ready" ? "green" : t.status === "Preparing" ? "amber" : "neutral"}>{t.status}</Badge>
+                <strong>{isolate(t.station)}</strong>
+                <Badge tone={t.status === "Ready" ? "green" : t.status === "Preparing" ? "amber" : "neutral"}>{isolate(t.status)}</Badge>
               </div>
-              <div className="faint">{t.table_label}</div>
+              <div className="faint">{isolate(t.table_label)}</div>
               <ul>
                 {(t.items ?? []).map((i, n) => (
                   <li key={n}>
                     {i.voided ? (
                       <span className="faint">
                         <s>
-                          {i.qty} × {i.dish}
-                        </s>{" "}
+                          {i.qty} × {isolate(i.dish)}
+                        </s>{isolate(" ")}
                         {tr("(voided)")}
                       </span>
                     ) : (
                       <>
-                        {i.qty} × {i.dish} {i.note ? <span className="faint">({i.note})</span> : null}
+                        {i.qty} × {isolate(i.dish)} {i.note ? <span className="faint">({isolate(i.note)})</span> : null}
                       </>
                     )}
                   </li>
@@ -73,7 +73,7 @@ export function Kitchen() {
               </ul>
               {next && (
                 <Button size="sm" loading={move.isPending && move.variables?.id === t.id} onClick={() => move.mutate({ id: t.id, action: next.action })}>
-                  {next.label}
+                  {isolate(next.label)}
                 </Button>
               )}
             </section>
