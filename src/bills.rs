@@ -1,6 +1,6 @@
 //! Bills: an order billed through ERP as one invoice or one for each seat; the stock its dishes use,
 //! taken from the outlet's store by their recipes; and payments at the table, by cash or card, with
-//! a tip on top for the staff.
+//! a tip on top for the staff, or a bill put on a hotel guest's room where Hospitality is installed.
 
 use crate::obj;
 use crate::orders::{choices, finish, modifier};
@@ -197,15 +197,76 @@ async fn consume(hc: &mut HookCtx<'_>, number: &str, outlet: &Doc, lines: &[Doc]
     Ok(Some(entry))
 }
 
+/// Whether every bill of an order is done with: paid, or on a hotel room.
+fn all_settled(bills: &[Doc]) -> bool {
+    bills.iter().all(|b| matches!(s(b, "status"), Some("Paid" | "On Room")))
+}
+
+/// Paid by Room: the bill goes on a hotel guest's room as one of Hospitality's room charges, which
+/// checks the guest in the room and posts it to their folio; putting it there is an Outlet
+/// Cashier's right. The hotel invoices it with the room (as the outlet's room charge item), so the
+/// bill's own draft invoice is dropped. A bill goes on a room whole, without a tip, and not after
+/// part of it was paid here.
+async fn on_room(hc: &mut HookCtx<'_>, doc: &Doc, bill: &mut Doc, n: i64, inv_id: Uuid, params: &Value) -> Result<String> {
+    if hc.ctx.schema.entity("RoomCharge").is_none() {
+        return Err(Error::invalid("putting a bill on a room needs Hospitality"));
+    }
+    if amount(params, "tip")?.is_some_and(|t| t > Decimal::ZERO) {
+        return Err(Error::field("tip", "is not put on a room: take it by cash or card"));
+    }
+    if amount(params, "amount")?.is_some() {
+        return Err(Error::field("amount", "a bill goes on a room whole"));
+    }
+    let text = |k: &str| params.get(k).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+    let number = text("room").ok_or_else(|| Error::field("room", "which room?"))?;
+    let guest = text("guest").ok_or_else(|| Error::field("guest", "the guest's name, as they give it"))?;
+    let system = elevated(hc.ctx);
+    let inv = hc.kernel.get_tx(&system, hc.tx, "SalesInvoice", inv_id, true).await?;
+    if inv.get("docstatus").and_then(Value::as_i64) != Some(0) || d(bill, "paid") > Decimal::ZERO {
+        return Err(Error::invalid(format!("bill {n} was paid here in part: only a bill not paid at all goes on a room")));
+    }
+    let outlet = hc.kernel.get_tx(&sys(hc.ctx), hc.tx, "Outlet", id(doc, "outlet").ok_or_else(|| Error::field("outlet", "is required"))?, false).await?;
+    let hotel = s(&outlet, "hotel_code").ok_or_else(|| Error::invalid("the outlet names no hotel: set its Hotel Code to put bills on rooms"))?.to_string();
+    let item = id(&outlet, "room_charge_item").ok_or_else(|| Error::invalid("the outlet has no Room Charge Item: what the hotel invoices its bills as"))?;
+    let found: Option<(Uuid, Uuid)> = sqlx::query_as(
+        "select p.id, r.id from e_hotel_property p join e_room r on r.tenant_id = p.tenant_id and r.property = p.id \
+         where p.tenant_id = $1 and p.code = $2 and r.room_number = $3",
+    )
+    .bind(hc.ctx.tenant)
+    .bind(&hotel)
+    .bind(&number)
+    .fetch_optional(&mut **hc.tx)
+    .await?;
+    let (property, room) = found.ok_or_else(|| Error::field("room", format!("is not a room of hotel {hotel}")))?;
+    let total = d(&inv, "grand_total");
+    let order = s(doc, "number").unwrap_or_default().to_string();
+    let charge = hc
+        .kernel
+        .insert_tx(
+            hc.ctx,
+            hc.tx,
+            "RoomCharge",
+            obj(json!({"property": property.to_string(), "room": room.to_string(), "guest_name": guest, "outlet": s(&outlet, "outlet_name"),
+                       "description": format!("Order {order}, bill {n}"), "amount": money(total), "item": item.to_string(), "reference": order})),
+        )
+        .await?;
+    // Unlinked from the order below, then dropped.
+    bill.insert("sales_invoice".into(), Value::Null);
+    bill.insert("room_charge".into(), charge.get("id").cloned().unwrap_or(Value::Null));
+    bill.insert("amount".into(), money(total));
+    bill.insert("status".into(), json!("On Room"));
+    Ok(format!("Put on room {number}: bill {n}, {total:.2}"))
+}
+
 /// `settle`: a payment at the table against one of the order's bills, through ERP. Its invoice is
 /// submitted if it is still a draft, and a payment entry made for what this payment covers (all the
 /// bill still owes, or part of it), by cash or card into the outlet's account, with a tip on top
-/// credited to the outlet's tips account for the staff. Every bill paid, the order is Settled.
+/// credited to the outlet's tips account for the staff; or the bill goes on a hotel room
+/// (`on_room`). Every bill done with, the order is Settled.
 pub(crate) async fn settle(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> Result<Value> {
-    hc.ctx.require("PaymentEntry", Action::Create)?;
     let order = id(doc, "id").ok_or_else(|| Error::internal("an order without an id"))?;
     // Its own fields only: the rows are written back as they are kept.
-    const KEPT: [&str; 7] = ["id", "seat", "sales_invoice", "amount", "paid", "tips", "status"];
+    const KEPT: [&str; 8] = ["id", "seat", "sales_invoice", "amount", "paid", "tips", "status", "room_charge"];
     let mut bills: Vec<Doc> = rows(doc, "bills")
         .into_iter()
         .map(|mut b| {
@@ -224,7 +285,29 @@ pub(crate) async fn settle(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> R
     let Some(at) = usize::try_from(n).ok().filter(|n| (1..=count).contains(n)).map(|n| n - 1) else {
         return Err(Error::field("bill", format!("is from 1 to {count}, as numbered on the order")));
     };
+    if s(&bills[at], "status") == Some("On Room") {
+        return Err(Error::invalid(format!("bill {n} is on a hotel room")));
+    }
     let inv_id = id(&bills[at], "sales_invoice").ok_or_else(|| Error::internal("a bill without its invoice"))?;
+    if params.get("paid_by").and_then(Value::as_str) == Some("Room") {
+        let said = on_room(hc, doc, &mut bills[at], n, inv_id, params).await?;
+        let settled = all_settled(&bills);
+        let system = elevated(hc.ctx);
+        let one = (id(doc, "sales_invoice") == Some(inv_id)).then_some(Value::Null);
+        hc.kernel.set_child_rows_tx(&system, hc.tx, "RestaurantOrder", "bills", order, bills).await?;
+        let mut values = json!({});
+        if settled {
+            values["status"] = json!("Settled");
+        }
+        if let Some(none) = one {
+            values["sales_invoice"] = none;
+        }
+        hc.kernel.set_values_tx(&system, hc.tx, "RestaurantOrder", order, obj(values)).await?;
+        hc.kernel.delete_tx(&system, hc.tx, "SalesInvoice", inv_id, None).await?;
+        let done = if settled { "; the order is settled" } else { "" };
+        return Ok(json!({"status": if settled { "Settled" } else { "Billed" }, "message": format!("{said}{done}")}));
+    }
+    hc.ctx.require("PaymentEntry", Action::Create)?;
     let system = elevated(hc.ctx);
     let inv = hc.kernel.get_tx(&system, hc.tx, "SalesInvoice", inv_id, true).await?;
     match inv.get("docstatus").and_then(Value::as_i64) {
@@ -283,7 +366,7 @@ pub(crate) async fn settle(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> R
     b.insert("tips".into(), money(d(b, "tips") + tip));
     b.insert("amount".into(), inv.get("grand_total").cloned().unwrap_or(Value::Null));
     b.insert("status".into(), json!(if left.is_zero() { "Paid" } else { "Partly Paid" }));
-    let settled = bills.iter().all(|b| s(b, "status") == Some("Paid"));
+    let settled = all_settled(&bills);
     hc.kernel.set_child_rows_tx(&system, hc.tx, "RestaurantOrder", "bills", order, bills).await?;
     if settled {
         hc.kernel.set_values_tx(&system, hc.tx, "RestaurantOrder", order, obj(json!({"status": "Settled"}))).await?;
