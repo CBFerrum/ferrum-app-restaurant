@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+Restaurant service and stock on ERP's stock and payment owners (FEO-046).
+
+- **Choices.** A menu lists modifiers (Extra Cheese, No Onion), each for one dish or every dish, with a price on top. A line's choices are priced with it, written as the menu writes them and sent to the kitchen with the dish; a new line whose dish or choices change is priced again, and once sent they are kept. The kitchen page shows them.
+- **Moved and merged.** Move to a Table takes an open order to another table of its outlet. A table with an open order takes its dishes and guests, and this one closes as Merged, pointing at it. Its kitchen tickets follow, their lines re-pointed so the kitchen still moves them on.
+- **Bills by seat.** Bill It makes one invoice, or one for each seat (every line then has its seat). The order keeps its bills.
+- **Stock by recipe.** With a store, billing takes what the dishes use from it as one submitted Material Issue at the cost of goods sold: each dish's recipe (its item's bill of materials in ERP, scrap included), or a stock item sold as it is, with what its choices add or leave out. A store that runs short bills nothing.
+- **Paid at the table.** Take Payment pays a bill by cash or card through a submitted ERP payment entry (a draft invoice is submitted first), in full or in part, with a tip credited to the outlet's tips account. Every bill paid, the order is Settled. The floor lists the bills still to pay.
+- The outlet has a store, cash, card and tips accounts, all its company's. The package needs ERP's inventory and manufacturing too. Names in Arabic and Hindi for the new fields, and Table, Order, Open, Server, Bar and Party corrected (they were translated in their computing or legal sense).
+
 ## 0.2.7
 
 Rebuilt with Ferrum-Frontend c59c9a2: the names of its models, fields and manifest in Arabic and Hindi (100 each in ui/src/locales/names, which the platform serves to every page of the workspace, so a record's labels, the launcher and the bar read in the person's language). Translated by the model, to be reviewed by native speakers.
