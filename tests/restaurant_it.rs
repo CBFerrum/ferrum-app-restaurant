@@ -89,11 +89,13 @@ async fn scenario() {
     let mut packages = ferrum_domain::packages().expect("platform packages");
     packages.extend(ferrum_app_erp::packages().expect("ERP's packages"));
     packages.extend(ferrum_app_restaurant::packages().expect("app packages"));
+    packages.extend(ferrum_app_hospitality::packages().expect("Hospitality's packages"));
     let catalog = Catalog::from_packages(packages).expect("catalog");
     let mut hooks = HookRegistry::default();
     ferrum_domain::register(&mut hooks);
     ferrum_app_erp::register(&mut hooks);
     ferrum_app_restaurant::register(&mut hooks);
+    ferrum_app_hospitality::register(&mut hooks);
     let settings = KernelSettings { secret_key: Some(SecretKey::new([7u8; 32])), ..Default::default() };
     let k = Kernel::boot(db, catalog, hooks, settings, None).await.expect("boot");
     ferrum_domain::maintenance(&k).await.expect("partitions");
@@ -105,7 +107,7 @@ async fn scenario() {
             admin_email: "admin@tandoor.test".into(),
             admin_password: "Correct-Horse-9".into(),
             admin_name: None,
-            packages: vec!["restaurant".into()],
+            packages: vec!["restaurant".into(), "hospitality".into()],
             settings: Some(json!({"fiscal_year_start_month": 4, "timezone": "Asia/Kolkata"})),
         })
         .await
@@ -503,6 +505,68 @@ async fn scenario() {
     refused(t.k.run_action(&server, "RestaurantOrder", thirsty, "bill", Value::Null).await, "invalid", "the store does not hold what its dishes use");
     assert_eq!(t.get("RestaurantOrder", thirsty).await["status"], "Open", "nothing billed");
     t.k.run_action(&server, "RestaurantOrder", thirsty, "cancel_order", Value::Null).await.expect("not sent: cancelled");
+
+    // ───────────── a bill on a hotel guest's room ─────────────
+    // Where the workspace runs a hotel too, a guest's bill may go on their room: Hospitality checks
+    // the guest in it and posts it to their folio, and the hotel invoices it with the room.
+    let night_item = uid(&t.insert(&a, "Item", item("ROOM-NIGHT")).await["id"]);
+    let dining = uid(&t.insert(&a, "Item", item("DINING")).await["id"]);
+    let inn = uid(&t
+        .insert(
+            &a,
+            "HotelProperty",
+            json!({"property_name": "The Tandoor Inn", "code": "INN", "company": company.to_string(), "room_item": night_item.to_string(),
+                   "walk_in_customer": walk_in.to_string()}),
+        )
+        .await["id"]);
+    let suite = uid(&t.insert(&a, "RoomType", json!({"room_type_name": "Suite", "property": inn.to_string(), "base_rate": "9000"})).await["id"]);
+    let r7 = uid(&t.insert(&a, "Room", json!({"room_number": "7", "property": inn.to_string(), "room_type": suite.to_string()})).await["id"]);
+    t.k.run_action(&a, "HotelProperty", inn, "open_business_date", json!({"date": "2026-12-01"})).await.expect("the inn opens");
+    let ravi = uid(&t
+        .insert(
+            &a,
+            "Stay",
+            json!({"property": inn.to_string(), "guest_name": "Ravi Rao", "room_type": suite.to_string(), "arrival": "2026-12-01", "departure": "2026-12-03"}),
+        )
+        .await["id"]);
+    t.k.run_action(&a, "Stay", ravi, "check_in", json!({"room": r7.to_string()})).await.expect("Ravi in room 7");
+    let supper = uid(&t.k.insert(&server, "RestaurantOrder", dine(t2, 1, json!([{"dish": "Dal Makhani", "qty": 1}]))).await.expect("Ravi's supper")["id"]);
+    t.k.run_action(&server, "RestaurantOrder", supper, "bill", Value::Null).await.expect("billed");
+    let room_bill = |guest: &str, extra: Value| {
+        let mut v = json!({"paid_by": "Room", "room": "7", "guest": guest});
+        v.as_object_mut().unwrap().extend(extra.as_object().cloned().unwrap_or_default());
+        v
+    };
+    refused(t.k.run_action(&server, "RestaurantOrder", supper, "settle", room_bill("Rao", json!({}))).await, "invalid", "names no hotel");
+    t.k.update(&manager, "Outlet", outlet, obj(json!({"hotel_code": "INN", "room_charge_item": dining.to_string()})), None).await.expect("the outlet's hotel");
+    // Putting a bill on a room is the hotel's Outlet Cashier's right.
+    refused(t.k.run_action(&server, "RestaurantOrder", supper, "settle", room_bill("Rao", json!({}))).await, "forbidden", "");
+    let host = t.user("host@tandoor.test", &["Server", "Outlet Cashier"]).await;
+    let wrong_room = json!({"paid_by": "Room", "room": "9", "guest": "Rao"});
+    refused(t.k.run_action(&host, "RestaurantOrder", supper, "settle", wrong_room).await, "invalid", "is not a room of hotel INN");
+    refused(t.k.run_action(&host, "RestaurantOrder", supper, "settle", room_bill("Sen", json!({}))).await, "invalid", "is not the name of the guest in room 7");
+    refused(t.k.run_action(&host, "RestaurantOrder", supper, "settle", room_bill("Rao", json!({"tip": "50"}))).await, "invalid", "is not put on a room");
+    let billed_supper = t.get("RestaurantOrder", supper).await;
+    let supper_invoice = uid(&billed_supper["bills"][0]["sales_invoice"]);
+    let put = t.k.run_action(&host, "RestaurantOrder", supper, "settle", room_bill("rao", json!({}))).await.expect("on room 7");
+    assert_eq!(put["message"], "Put on room 7: bill 1, 220.00; the order is settled");
+    let after = t.get("RestaurantOrder", supper).await;
+    assert_eq!((after["status"].as_str(), after["bills"][0]["status"].as_str()), (Some("Settled"), Some("On Room")));
+    assert!(after["sales_invoice"].is_null() && after["bills"][0]["sales_invoice"].is_null(), "{after:?}");
+    refused(t.k.get(&a, "SalesInvoice", supper_invoice, false).await, "not found", "");
+    // A bill paid here in part does not go on a room.
+    let snack = uid(&t.k.insert(&host, "RestaurantOrder", dine(t2, 1, json!([{"dish": "Lime Soda", "qty": 1}]))).await.expect("a soda")["id"]);
+    t.k.run_action(&host, "RestaurantOrder", snack, "bill", Value::Null).await.expect("billed");
+    t.k.run_action(&host, "RestaurantOrder", snack, "settle", json!({"paid_by": "Cash", "amount": "20"})).await.expect("part of it in cash");
+    refused(t.k.run_action(&host, "RestaurantOrder", snack, "settle", room_bill("Rao", json!({}))).await, "invalid", "was paid here in part");
+    t.k.run_action(&host, "RestaurantOrder", snack, "settle", json!({"paid_by": "Cash"})).await.expect("the rest in cash");
+    let charge = t.get("RoomCharge", uid(&after["bills"][0]["room_charge"])).await;
+    let folio = t.get("Folio", uid(&charge["folio"])).await;
+    let on_folio = folio["charges"].as_array().unwrap().iter().find(|c| c["room_charge"] == charge["id"]).cloned().expect("on Ravi's folio");
+    assert_eq!(
+        (on_folio["description"].as_str().map(|d| d.starts_with("The Tandoor: Order ORD-")), dec(&on_folio["amount"]), on_folio["item"].as_str()),
+        (Some(true), 220.0, Some(dining.to_string().as_str()))
+    );
 
     // ───────────── reservations ─────────────
     let booking = |table: Uuid, party: i64, from: &str, to: &str| {
