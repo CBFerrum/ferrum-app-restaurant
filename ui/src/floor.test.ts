@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { awayLink, byTable, tableLink } from "./Home";
+import { awayLink, byTable, tableLink, toPay } from "./Home";
 import { NEXT } from "./Kitchen";
 
 describe("the floor and the kitchen", () => {
-  it("finds each table's open order, leaving takeaways out", () => {
+  it("finds each table's open order, leaving takeaways and billed orders out", () => {
     const m = byTable([
-      { id: "o1", order_type: "Dine In", table: "t1" },
-      { id: "o2", order_type: "Takeaway", table: null },
+      { id: "o1", status: "Open", order_type: "Dine In", table: "t1" },
+      { id: "o2", status: "Open", order_type: "Takeaway", table: null },
+      { id: "o3", status: "Billed", order_type: "Dine In", table: "t2" },
     ]);
     expect(m.get("t1")?.id).toBe("o1");
     expect(m.size).toBe(1);
+  });
+
+  it("lists the bills still to be paid", () => {
+    const orders = [
+      { id: "o1", status: "Open" },
+      { id: "o2", status: "Billed" },
+      { id: "o3", status: "Settled" },
+    ];
+    expect(toPay(orders).map((o) => o.id)).toEqual(["o2"]);
   });
 
   it("moves a ticket on one step at a time", () => {

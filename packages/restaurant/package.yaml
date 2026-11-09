@@ -2,7 +2,7 @@ package: restaurant
 version: 0.1.0
 label: Restaurant
 description: "A restaurant: tables and menus, orders for dine-in, takeaway and delivery, kitchen tickets by station, bills through ERP and reservations"
-depends: [core, selling, accounting]
+depends: [core, selling, accounting, inventory, manufacturing]
 
 modules:
   - name: restaurant
@@ -27,6 +27,10 @@ roles:
       - {entity: Item, read: true}
       - {entity: Company, read: true}
       - {entity: SalesInvoice, read: true, create: true}
+      - {entity: PaymentEntry, read: true, create: true}
+      - {entity: Warehouse, read: true}
+      - {entity: Account, read: true}
+      - {entity: StockEntry, read: true}
   - name: Server
     description: Takes orders and reservations, sends them to the kitchen and bills them.
     permissions:
@@ -39,6 +43,7 @@ roles:
       - {entity: Customer, read: true}
       - {entity: Item, read: true}
       - {entity: SalesInvoice, read: true, create: true}
+      - {entity: PaymentEntry, read: true, create: true}
   - name: Kitchen
     description: Works the tickets for their station, from preparing to served.
     permissions:

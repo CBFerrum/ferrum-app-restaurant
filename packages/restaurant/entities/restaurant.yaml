@@ -10,6 +10,10 @@
     - {name: company, type: link, to: Company, required: true, in_list: true}
     - {name: walk_in_customer, type: link, to: Customer, required: true, description: "Who a bill goes to when the order names nobody"}
     - {name: menu, type: link, to: Menu, label: Active Menu}
+    - {name: store, type: link, to: Warehouse, link_filters: {is_group: false}, description: "Where its kitchen and bar take what they use: billing issues each dish's recipe (its bill of materials in ERP) from here. Empty keeps stock out of it"}
+    - {name: cash_account, type: link, to: Account, link_filters: {is_group: false, account_type: Cash}, description: "Where cash taken at the table goes"}
+    - {name: card_account, type: link, to: Account, link_filters: {is_group: false, account_type: Bank}, description: "Where card payments taken at the table go"}
+    - {name: tips_account, type: link, to: Account, link_filters: {is_group: false, root_type: Liability}, description: "Tips owed to the staff, until payroll pays them out"}
   list: {columns: [outlet_name, company, menu], sort: outlet_name asc}
 
 - name: DiningTable
@@ -35,6 +39,7 @@
     - {name: menu_name, type: data, required: true, in_list: true}
     - {name: outlet, type: link, to: Outlet, in_list: true}
     - {name: dishes, type: table, of: MenuDish}
+    - {name: modifiers, type: table, of: MenuModifier, description: "Choices a dish is ordered with, each priced on top of it"}
   list: {columns: [menu_name, outlet], sort: menu_name asc}
 
 - name: MenuDish
@@ -45,6 +50,17 @@
     - {name: dish_name, type: data, required: true, in_list: true}
     - {name: price, type: currency, required: true, in_list: true}
     - {name: station, type: select, options: [Kitchen, Grill, Bar, Pastry], default: Kitchen, required: true, in_list: true}
+    - {name: available, type: check, default: true, in_list: true}
+
+- name: MenuModifier
+  label: Modifier
+  kind: child
+  fields:
+    - {name: modifier, type: data, required: true, in_list: true, description: "As a line names it: Extra Cheese, No Onion"}
+    - {name: dish, type: data, in_list: true, description: "The dish it is for, as the menu writes it; empty for every dish"}
+    - {name: price, type: currency, default: 0, min: "0", in_list: true, description: "Added to the dish's price"}
+    - {name: item, type: link, to: Item, label: Uses, description: "What it takes from the store, beyond the dish's recipe"}
+    - {name: qty, type: decimal, label: Uses Qty, description: "How much of it for each dish; below zero for what it leaves out of the recipe"}
     - {name: available, type: check, default: true, in_list: true}
 
 - name: RestaurantOrder
@@ -63,14 +79,38 @@
     - {name: customer_name, type: data}
     - {name: phone, type: phone}
     - {name: delivery_address, type: text, visible_if: "doc.order_type == 'Delivery'"}
-    - {name: status, type: select, options: [Open, Billed, Cancelled], default: Open, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: status, type: select, options: [Open, Billed, Settled, Cancelled, Merged], default: Open, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: merged_into, type: link, to: RestaurantOrder, read_only: true, no_copy: true, visible_if: "doc.status == 'Merged'", description: "The order at the table it moved to, which took its dishes"}
     - {name: delivery_status, type: select, options: [Not Yet, Out for Delivery, Delivered], read_only: true, no_copy: true, in_list: true, visible_if: "doc.order_type == 'Delivery'"}
     - {name: lines, type: table, of: OrderLine}
     - {name: total, type: currency, read_only: true, in_list: true}
     - {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true}
+    - {name: bills, type: table, of: OrderBill, read_only: true, no_copy: true, description: "Its invoices in ERP, one or one for each seat, and what was paid on them"}
+    - {name: stock_entry, type: link, to: StockEntry, label: Stock Used, read_only: true, no_copy: true, description: "What billing took from the outlet's store for its dishes"}
   actions:
     - {name: send_to_kitchen, label: Send to the Kitchen, permission: write, condition: "doc.status == 'Open'"}
-    - {name: bill, label: Bill It, permission: write, condition: "doc.status == 'Open'", confirm: "The order closes and its invoice is made. Continue?"}
+    - name: bill
+      label: Bill It
+      permission: write
+      condition: "doc.status == 'Open'"
+      confirm: "The order closes and its invoice is made. Continue?"
+      params:
+        - {name: split, label: Split, type: select, options: [One Bill, By Seat], description: "By seat: a bill for each seat's dishes"}
+    - name: move_to
+      label: Move to a Table
+      permission: write
+      condition: "doc.status == 'Open' && doc.order_type == 'Dine In'"
+      params:
+        - {name: table, label: Table, type: link, to: DiningTable, required: true, description: "A table with an open order takes this order's dishes into it"}
+    - name: settle
+      label: Take Payment
+      permission: write
+      condition: "doc.status == 'Billed'"
+      params:
+        - {name: paid_by, label: Paid By, type: select, options: [Cash, Card], required: true}
+        - {name: bill, label: Bill, type: int, description: "Which bill, as numbered on the order: the first when empty"}
+        - {name: amount, label: Amount, description: "What this payment covers of the bill: all it still owes when empty"}
+        - {name: tip, label: Tip, description: "Given for the staff, on top of the bill"}
     - {name: cancel_order, label: Cancel the Order, permission: write, condition: "doc.status == 'Open'"}
     - {name: dispatch, label: Out for Delivery, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status != 'Delivered'"}
     - {name: delivered, label: Delivered, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status == 'Out for Delivery'"}
@@ -83,12 +123,26 @@
   fields:
     - {name: dish, type: data, required: true, in_list: true, description: "The dish's name on the outlet's menu", read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
     - {name: item, type: link, to: Item, read_only: true}
+    - {name: modifiers, type: data, in_list: true, description: "Choices from the menu, separated by commas: priced on top of the dish and sent to the kitchen with it", read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
     - {name: qty, type: int, default: 1, min: 1, required: true, in_list: true, read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
+    - {name: seat, type: int, min: 1, in_list: true, description: "Whose it is, when the bill is split by seat"}
     - {name: price, type: currency, read_only: true, in_list: true}
     - {name: amount, type: currency, read_only: true, in_list: true}
     - {name: station, type: data, read_only: true, in_list: true}
     - {name: note, type: data, read_only_if: "doc.state in ['Sent', 'Ready', 'Served', 'Void']"}
     - {name: state, type: select, options: [New, Sent, Ready, Served, Void], default: New, in_list: true, description: "The kitchen moves it on; set Void to take it off"}
+    - {name: priced_as, type: data, read_only: true, hidden: true, description: "The dish and choices its price is for"}
+
+- name: OrderBill
+  label: Bill
+  kind: child
+  fields:
+    - {name: seat, type: int, in_list: true}
+    - {name: sales_invoice, type: link, to: SalesInvoice, in_list: true}
+    - {name: amount, type: currency, in_list: true}
+    - {name: paid, type: currency, in_list: true}
+    - {name: tips, type: currency, in_list: true}
+    - {name: status, type: select, options: [Unpaid, Partly Paid, Paid], default: Unpaid, in_list: true}
 
 - name: KitchenTicket
   label: Kitchen Ticket
@@ -116,6 +170,7 @@
     - {name: line, type: data, required: true, description: "The order line's id"}
     - {name: dish, type: data, required: true, in_list: true}
     - {name: qty, type: int, required: true, in_list: true}
+    - {name: modifiers, type: data, in_list: true}
     - {name: note, type: data, in_list: true}
     - {name: voided, type: check, read_only: true, in_list: true, description: "Voided on the order: not to be made"}
 

@@ -2,8 +2,10 @@
 //! (`FERRUM_RESTAURANT_TEST_DATABASE_URL`, default `postgres://ferrum:ferrum@localhost:5432/ferrum_restaurant_test`;
 //! reset first): a table's order priced from the menu, one open order to a table, its lines sent to
 //! the kitchen as a ticket for each station and worked through to served, sent lines voided rather
-//! than edited, the bill made through ERP and the table freed; a takeaway and a delivery; table
-//! reservations that hold one party at a time within the seats; and who may do what.
+//! than edited, the bill made through ERP and the table freed; a takeaway and a delivery; choices
+//! priced on top of their dish; a party moved to another table and another merged into it; bills
+//! by seat, paid at the table by card and cash with a tip; the dishes' recipes taken from the
+//! store; table reservations that hold one party at a time within the seats; and who may do what.
 
 use ferrum_kernel::privacy::Person;
 use ferrum_kernel::secret::SecretKey;
@@ -274,6 +276,233 @@ async fn scenario() {
     assert!(out["message"].as_str().unwrap().ends_with("is out for delivery"), "{out}");
     t.k.run_action(&server, "RestaurantOrder", delivery, "delivered", Value::Null).await.unwrap();
     assert_eq!(t.get("RestaurantOrder", delivery).await["delivery_status"], "Delivered");
+
+    // ───────────── choices, seats, a moved table, payments at the table and stock ─────────────
+    // What the kitchen uses comes from the outlet's store: a dish's recipe is its item's bill of
+    // materials in ERP, and a bottled drink a stock item sold as it is.
+    let products = t.find_one("ItemGroup", json!({"group_name": "Products"})).await;
+    let kg = t.find_one("Uom", json!({"uom_name": "Kg"})).await;
+    let stocked =
+        |code: &str, uom: &Value| json!({"item_code": code, "item_name": code, "item_group": products["id"], "stock_uom": uom, "is_stock_item": true});
+    let paneer = uid(&t.insert(&a, "Item", stocked("PANEER", &kg["id"])).await["id"]);
+    let masala = uid(&t.insert(&a, "Item", stocked("MASALA", &kg["id"])).await["id"]);
+    let cheese = uid(&t.insert(&a, "Item", stocked("CHEESE", &kg["id"])).await["id"]);
+    let cola = uid(&t.insert(&a, "Item", stocked("COLA", &nos["id"])).await["id"]);
+    let store = uid(&t.find_one("Warehouse", json!({"warehouse_name": "Stores", "company": company.to_string()})).await["id"]);
+    let opening = uid(&t
+        .insert(
+            &a,
+            "StockEntry",
+            json!({"company": company.to_string(), "purpose": "Opening Stock", "items": [
+                {"item": paneer.to_string(), "qty": "2", "basic_rate": "400", "target_warehouse": store.to_string()},
+                {"item": masala.to_string(), "qty": "1", "basic_rate": "200", "target_warehouse": store.to_string()},
+                {"item": cheese.to_string(), "qty": "1", "basic_rate": "600", "target_warehouse": store.to_string()},
+                {"item": cola.to_string(), "qty": "10", "basic_rate": "30", "target_warehouse": store.to_string()}]}),
+        )
+        .await["id"]);
+    t.k.submit(&a, "StockEntry", opening, None).await.expect("opening stock");
+    let recipe = uid(&t
+        .insert(
+            &a,
+            "Bom",
+            json!({"company": company.to_string(), "item": tikka.to_string(), "quantity": "1", "items": [
+                {"item": paneer.to_string(), "qty": "0.25"}, {"item": masala.to_string(), "qty": "0.02", "scrap_percent": "10"}]}),
+        )
+        .await["id"]);
+    t.k.submit(&a, "Bom", recipe, None).await.expect("the tikka's recipe");
+    let mut dishes = t.get("Menu", menu).await["dishes"].as_array().unwrap().clone();
+    dishes.push(json!({"item": cola.to_string(), "dish_name": "Cola", "price": "40", "station": "Bar"}));
+    t.k.update(
+        &manager,
+        "Menu",
+        menu,
+        obj(json!({"dishes": dishes, "modifiers": [
+            {"modifier": "Extra Cheese", "dish": "Paneer Tikka", "price": "60", "item": cheese.to_string(), "qty": "0.05"},
+            {"modifier": "No Onion"},
+            {"modifier": "Truffle", "dish": "Paneer Tikka", "price": "200", "available": false}]})),
+        None,
+    )
+    .await
+    .expect("choices on the menu");
+    // The outlet's store and accounts are its company's.
+    let elsewhere = uid(&t.insert(&a, "Company", json!({"company_name": "Elsewhere", "abbr": "EW", "default_currency": inr["id"]})).await["id"]);
+    let theirs = t.find_one("Warehouse", json!({"warehouse_name": "Stores", "company": elsewhere.to_string()})).await;
+    refused(t.k.update(&manager, "Outlet", outlet, obj(json!({"store": theirs["id"]})), None).await, "invalid", "is another company's");
+    let account = |name: &str| {
+        let t = &t;
+        let name = name.to_string();
+        async move { uid(&t.find_one("Account", json!({"account_name": name, "company": company.to_string()})).await["id"]) }
+    };
+    let (cash, bank, liabilities) = (account("Cash").await, account("Primary Bank").await, account("Current Liabilities").await);
+    t.k.update(&manager, "Outlet", outlet, obj(json!({"store": store.to_string(), "cash_account": cash.to_string(), "card_account": bank.to_string()})), None)
+        .await
+        .expect("the outlet's store and tills");
+    let t3 = uid(&t.insert(&manager, "DiningTable", json!({"table_name": "3", "outlet": outlet.to_string(), "seats": 6})).await["id"]);
+
+    // Choices are priced on top of their dish, as the menu writes them, and only those it offers.
+    let dine = |table: Uuid, guests: i64, lines: Value| {
+        obj(json!({"outlet": outlet.to_string(), "order_type": "Dine In", "table": table.to_string(), "guests": guests, "lines": lines}))
+    };
+    refused(
+        t.k.insert(&server, "RestaurantOrder", dine(t2, 2, json!([{"dish": "Paneer Tikka", "qty": 1, "modifiers": "Truffle"}]))).await,
+        "invalid",
+        "Truffle is not available today",
+    );
+    refused(
+        t.k.insert(&server, "RestaurantOrder", dine(t2, 2, json!([{"dish": "Paneer Tikka", "qty": 1, "modifiers": "Mint"}]))).await,
+        "invalid",
+        "Mint is not a choice for Paneer Tikka",
+    );
+    refused(
+        t.k.insert(&server, "RestaurantOrder", dine(t2, 2, json!([{"dish": "Dal Makhani", "qty": 1, "modifiers": "extra cheese"}]))).await,
+        "invalid",
+        "extra cheese is not a choice for Dal Makhani",
+    );
+    let party =
+        t.k.insert(
+            &server,
+            "RestaurantOrder",
+            dine(
+                t2,
+                3,
+                json!([{"dish": "Paneer Tikka", "qty": 2, "modifiers": "extra cheese, no onion", "seat": 1}, {"dish": "Cola", "qty": 1, "seat": 2},
+                       {"dish": "Dal Makhani", "qty": 1}]),
+            ),
+        )
+        .await
+        .expect("an order with choices");
+    assert_eq!(dec(&party["total"]), 1080.0, "2 × (350 + 60) + 40 + 220");
+    assert_eq!(party["lines"][0]["modifiers"], "Extra Cheese, No Onion", "written as the menu writes them");
+    let pid = uid(&party["id"]);
+    // A new line's choices change: it is priced again.
+    let mut ls = party["lines"].as_array().unwrap().clone();
+    ls[0]["modifiers"] = json!("No Onion");
+    let fewer = t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await.expect("no cheese");
+    assert_eq!(dec(&fewer["total"]), 960.0, "2 × 350 + 40 + 220");
+    let mut ls = fewer["lines"].as_array().unwrap().clone();
+    ls[0]["modifiers"] = json!("No Onion, Extra Cheese");
+    assert_eq!(dec(&t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await.expect("cheese after all")["total"]), 1080.0);
+    // The grill is told the choices; sent, they are not changed.
+    t.k.run_action(&server, "RestaurantOrder", pid, "send_to_kitchen", Value::Null).await.expect("sent");
+    let grill = uid(&t.find_one("KitchenTicket", json!({"order": pid.to_string(), "station": "Grill"})).await["id"]);
+    assert_eq!(t.get("KitchenTicket", grill).await["items"][0]["modifiers"], "No Onion, Extra Cheese");
+    let mut ls = t.get("RestaurantOrder", pid).await["lines"].as_array().unwrap().clone();
+    ls[0]["modifiers"] = json!("No Onion");
+    refused(t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await, "invalid", "void it and order again");
+
+    // The party moves to a bigger table; its tickets follow it.
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "move_to", json!({"table": t2.to_string()})).await, "invalid", "is the order's table already");
+    let moved = t.k.run_action(&server, "RestaurantOrder", pid, "move_to", json!({"table": t3.to_string()})).await.expect("moved");
+    assert_eq!(moved["message"], "Moved to Table 3");
+    assert!(!t.get("DiningTable", t2).await["occupied"].as_bool().unwrap() && t.get("DiningTable", t3).await["occupied"].as_bool().unwrap());
+    assert_eq!(t.get("KitchenTicket", grill).await["table_label"], "Table 3");
+    // Friends sat at the table it left join it: their order is merged into the party's.
+    let late =
+        uid(&t.k.insert(&server, "RestaurantOrder", dine(t2, 2, json!([{"dish": "Lime Soda", "qty": 2, "seat": 3}]))).await.expect("a second party")["id"]);
+    t.k.run_action(&server, "RestaurantOrder", late, "send_to_kitchen", Value::Null).await.expect("to the bar");
+    let merged = t.k.run_action(&server, "RestaurantOrder", late, "move_to", json!({"table": t3.to_string()})).await.expect("merged");
+    let party_number = t.get("RestaurantOrder", pid).await["number"].as_str().unwrap().to_string();
+    assert_eq!(merged["message"], format!("Merged into {party_number} at Table 3"));
+    let gone = t.get("RestaurantOrder", late).await;
+    assert_eq!((gone["status"].as_str(), gone["merged_into"].as_str(), dec(&gone["total"])), (Some("Merged"), Some(pid.to_string().as_str()), 0.0));
+    let together = t.get("RestaurantOrder", pid).await;
+    assert_eq!((dec(&together["total"]), together["guests"].as_i64(), together["lines"].as_array().unwrap().len()), (1260.0, Some(5), 4));
+    assert!(!t.get("DiningTable", t2).await["occupied"].as_bool().unwrap(), "the table it left is free");
+    // The bar's ticket for the sodas is the party's now, and the sodas follow it there.
+    let mut sodas = None;
+    for r in t.find("KitchenTicket", json!({"order": pid.to_string(), "station": "Bar"})).await {
+        let ticket = t.get("KitchenTicket", uid(&r["id"])).await;
+        if ticket["items"].as_array().unwrap().iter().any(|i| i["dish"] == "Lime Soda") {
+            sodas = Some(uid(&ticket["id"]));
+        }
+    }
+    let sodas = sodas.expect("the sodas' ticket went with them");
+    t.k.run_action(&cook, "KitchenTicket", sodas, "start", Value::Null).await.unwrap();
+    assert_eq!(t.k.run_action(&cook, "KitchenTicket", sodas, "ready", Value::Null).await.unwrap()["message"], "Ready for Table 3");
+    assert!(lines(&t.get("RestaurantOrder", pid).await).iter().any(|(d, _, st)| d == "Lime Soda" && st == "Ready"), "the merged sodas follow their ticket");
+
+    // A bill for each seat: every dish has its seat first.
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "bill", json!({"split": "By Seat"})).await, "invalid", "Dal Makhani has no seat");
+    let mut ls = t.get("RestaurantOrder", pid).await["lines"].as_array().unwrap().clone();
+    for l in ls.iter_mut().filter(|l| l["dish"] == "Dal Makhani") {
+        l["seat"] = json!(2);
+    }
+    t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await.expect("a seat for the dal, sent or not");
+    let split = t.k.run_action(&server, "RestaurantOrder", pid, "bill", json!({"split": "By Seat"})).await.expect("billed by seat");
+    assert!(split["message"].as_str().unwrap().starts_with("Billed by seat, 3 draft invoices in ERP: seat 1 "), "{split}");
+    let billed = t.get("RestaurantOrder", pid).await;
+    let bills = |o: &Doc| -> Vec<(i64, f64, f64, f64, String)> {
+        o["bills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| (b["seat"].as_i64().unwrap(), dec(&b["amount"]), dec(&b["paid"]), dec(&b["tips"]), b["status"].as_str().unwrap().to_string()))
+            .collect()
+    };
+    assert_eq!(bills(&billed), vec![(1, 820.0, 0.0, 0.0, "Unpaid".into()), (2, 260.0, 0.0, 0.0, "Unpaid".into()), (3, 180.0, 0.0, 0.0, "Unpaid".into())]);
+    assert!(billed["sales_invoice"].is_null(), "no one invoice: one for each seat");
+    let seat_one = uid(&billed["bills"][0]["sales_invoice"]);
+    assert_eq!(t.get("SalesInvoice", seat_one).await["items"][0]["description"], "Paneer Tikka (No Onion, Extra Cheese)");
+    // What the dishes used left the store: the tikkas' recipe (its scrap too) and their extra
+    // cheese, and the cola as it is; the dal and sodas use no stock. At the cost of goods sold.
+    let used = t.get("StockEntry", uid(&billed["stock_entry"])).await;
+    assert_eq!((used["purpose"].as_str(), used["docstatus"].as_i64()), (Some("Material Issue"), Some(1)));
+    let mut took: Vec<(String, f64)> = used["items"].as_array().unwrap().iter().map(|i| (i["item"].as_str().unwrap().to_string(), dec(&i["qty"]))).collect();
+    took.sort_by(|x, y| x.0.cmp(&y.0));
+    let mut want = vec![(paneer.to_string(), 0.5), (masala.to_string(), 0.044), (cheese.to_string(), 0.1), (cola.to_string(), 1.0)];
+    want.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(took, want);
+    let cogs = t.get("Company", company).await["cogs_account"].clone();
+    assert!(used["items"].as_array().unwrap().iter().all(|i| i["expense_account"] == cogs && i["source_warehouse"] == store.to_string().as_str()), "{used:?}");
+
+    // Payment at the table, bill by bill.
+    refused(t.k.run_action(&cook, "RestaurantOrder", pid, "settle", json!({"paid_by": "Card"})).await, "forbidden", "");
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Card", "bill": 4})).await, "invalid", "is from 1 to 3");
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Card", "tip": "80"})).await, "invalid", "no tips account");
+    let tips = uid(&t
+        .insert(
+            &a,
+            "Account",
+            json!({"account_name": "Tips Payable", "company": company.to_string(), "parent_account": liabilities.to_string(), "root_type": "Liability"}),
+        )
+        .await["id"]);
+    t.k.update(&manager, "Outlet", outlet, obj(json!({"tips_account": tips.to_string()})), None).await.expect("a tips account");
+    let paid = t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Card", "tip": "80"})).await.expect("seat 1 pays by card");
+    assert_eq!(paid["message"], "Took 820.00 by card and a tip of 80.00: bill 1 is paid");
+    let pe = t.get("PaymentEntry", uid(&paid["payment_entry"]["id"])).await;
+    assert_eq!(
+        (dec(&pe["paid_amount"]), pe["docstatus"].as_i64(), pe["bank_account"].as_str(), dec(&pe["references"][0]["allocated_amount"])),
+        (900.0, Some(1), Some(bank.to_string().as_str()), 820.0),
+        "{pe:?}"
+    );
+    assert_eq!(
+        (pe["deductions"][0]["account"].as_str(), dec(&pe["deductions"][0]["amount"])),
+        (Some(tips.to_string().as_str()), -80.0),
+        "the tip is credited to what the staff are owed"
+    );
+    let seat_one = t.get("SalesInvoice", seat_one).await;
+    assert_eq!((seat_one["docstatus"].as_i64(), dec(&seat_one["outstanding_amount"])), (Some(1), 0.0), "submitted, and paid");
+    // Seat 2 is shared between two guests paying cash.
+    let half = t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash", "bill": 2, "amount": "130"})).await.expect("half");
+    assert_eq!(half["message"], "Took 130.00 by cash: bill 2 owes 130.00");
+    refused(
+        t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash", "bill": 2, "amount": "200"})).await,
+        "invalid",
+        "bill 2 owes 130.00",
+    );
+    t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash", "bill": "2"})).await.expect("the other half");
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash", "bill": 1})).await, "invalid", "bill 1 is paid");
+    let last = t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash", "bill": 3})).await.expect("seat 3");
+    assert_eq!(last["message"], "Took 180.00 by cash: bill 3 is paid; the order is settled");
+    let settled = t.get("RestaurantOrder", pid).await;
+    assert_eq!(settled["status"], "Settled");
+    assert_eq!(bills(&settled), vec![(1, 820.0, 820.0, 80.0, "Paid".into()), (2, 260.0, 260.0, 0.0, "Paid".into()), (3, 180.0, 180.0, 0.0, "Paid".into())]);
+    refused(t.k.run_action(&server, "RestaurantOrder", pid, "settle", json!({"paid_by": "Cash"})).await, "invalid", "not available");
+    // The store runs short: nothing is billed until it holds what the dishes use.
+    let thirsty = uid(&t.k.insert(&server, "RestaurantOrder", dine(t2, 2, json!([{"dish": "Cola", "qty": 20}]))).await.expect("a thirsty table")["id"]);
+    refused(t.k.run_action(&server, "RestaurantOrder", thirsty, "bill", Value::Null).await, "invalid", "the store does not hold what its dishes use");
+    assert_eq!(t.get("RestaurantOrder", thirsty).await["status"], "Open", "nothing billed");
+    t.k.run_action(&server, "RestaurantOrder", thirsty, "cancel_order", Value::Null).await.expect("not sent: cancelled");
 
     // ───────────── reservations ─────────────
     let booking = |table: Uuid, party: i64, from: &str, to: &str| {
