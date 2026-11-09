@@ -1,5 +1,6 @@
-// The floor: each table, free or taken with its open order, and the takeaways and deliveries still
-// open. A table opens its order, or a new one for that table; the kitchen has its own page.
+// The floor: each table, free or taken with its open order, the takeaways and deliveries still
+// open, and the bills still to be paid. A table opens its order, or a new one for that table; a bill
+// to pay opens its order, where payment is taken; the kitchen has its own page.
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -32,8 +33,13 @@ export function awayLink(kind: "Takeaway" | "Delivery", outlets: Row[]): string 
 /** The open order on each table, by table id. */
 export function byTable(orders: Row[]): Map<string, Row> {
   const out = new Map<string, Row>();
-  for (const o of orders) if (o.order_type === "Dine In" && typeof o.table === "string") out.set(o.table, o);
+  for (const o of orders) if (o.status === "Open" && o.order_type === "Dine In" && typeof o.table === "string") out.set(o.table, o);
   return out;
+}
+
+/** The orders billed and not yet paid, oldest first. */
+export function toPay(orders: Row[]): Row[] {
+  return orders.filter((o) => o.status === "Billed");
 }
 
 export function Home() {
@@ -43,7 +49,7 @@ export function Home() {
     queryFn: async () => {
       const [tables, orders, outlets] = await Promise.all([
         rows("DiningTable", [], { sort: "table_name asc" }),
-        rows("RestaurantOrder", [["status", "eq", "Open"]]),
+        rows("RestaurantOrder", [["status", "in", ["Open", "Billed"]]], { sort: "created_at asc" }),
         rows("Outlet", [], { fields: "id,outlet_name" }),
       ]);
       return { tables, orders, outlets };
@@ -53,7 +59,8 @@ export function Home() {
   if (q.isPending) return <PageLoading />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const open = byTable(q.data.orders);
-  const away = q.data.orders.filter((o) => o.order_type !== "Dine In");
+  const away = q.data.orders.filter((o) => o.status === "Open" && o.order_type !== "Dine In");
+  const unpaid = toPay(q.data.orders);
   if (!q.data.tables.length)
     return (
       <div className="np-page">
@@ -98,6 +105,22 @@ export function Home() {
             </li>
           ))}
         </ul>
+      </section>
+      <section className="card card-pad stack" aria-label={tr("Bills to pay")}>
+        <h3>{tr("Bills to pay ({length})", { length: unpaid.length })}</h3>
+        {unpaid.length ? (
+          <ul className="stack">
+            {unpaid.map((o) => (
+              <li key={o.id}>
+                <Link to={`/e/RestaurantOrder/${o.id}`}>
+                  {isolate(String(o.number ?? ""))} · {isolate(String(o.total ?? ""))}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">{tr("Every bill is paid.")}</p>
+        )}
       </section>
     </div>
   );
