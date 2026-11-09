@@ -14,6 +14,8 @@
     - {name: cash_account, type: link, to: Account, link_filters: {is_group: false, account_type: Cash}, description: "Where cash taken at the table goes"}
     - {name: card_account, type: link, to: Account, link_filters: {is_group: false, account_type: Bank}, description: "Where card payments taken at the table go"}
     - {name: tips_account, type: link, to: Account, link_filters: {is_group: false, root_type: Liability}, description: "Tips owed to the staff, until payroll pays them out"}
+    - {name: hotel_code, type: data, label: Hotel Code, description: "The hotel (its property code in Hospitality) whose guests may put a bill on their room"}
+    - {name: room_charge_item, type: link, to: Item, description: "What the hotel invoices a bill put on a room as"}
   list: {columns: [outlet_name, company, menu], sort: outlet_name asc}
 
 - name: DiningTable
@@ -107,10 +109,12 @@
       permission: write
       condition: "doc.status == 'Billed'"
       params:
-        - {name: paid_by, label: Paid By, type: select, options: [Cash, Card], required: true}
+        - {name: paid_by, label: Paid By, type: select, options: [Cash, Card, Room], required: true, description: "Room: put on a hotel guest's room, invoiced by the hotel"}
         - {name: bill, label: Bill, type: int, description: "Which bill, as numbered on the order: the first when empty"}
         - {name: amount, label: Amount, description: "What this payment covers of the bill: all it still owes when empty"}
         - {name: tip, label: Tip, description: "Given for the staff, on top of the bill"}
+        - {name: room, label: Room, description: "The hotel room it goes on, when paid by Room"}
+        - {name: guest, label: Guest, description: "The guest's name as they give it, checked against the room's stay"}
     - {name: cancel_order, label: Cancel the Order, permission: write, condition: "doc.status == 'Open'"}
     - {name: dispatch, label: Out for Delivery, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status != 'Delivered'"}
     - {name: delivered, label: Delivered, permission: write, condition: "doc.order_type == 'Delivery' && doc.delivery_status == 'Out for Delivery'"}
@@ -142,7 +146,8 @@
     - {name: amount, type: currency, in_list: true}
     - {name: paid, type: currency, in_list: true}
     - {name: tips, type: currency, in_list: true}
-    - {name: status, type: select, options: [Unpaid, Partly Paid, Paid], default: Unpaid, in_list: true}
+    - {name: status, type: select, options: [Unpaid, Partly Paid, Paid, On Room], default: Unpaid, in_list: true}
+    - {name: room_charge, type: data, description: "The hotel's room charge it went on, when put on a room"}
 
 - name: KitchenTicket
   label: Kitchen Ticket
