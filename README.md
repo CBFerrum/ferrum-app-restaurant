@@ -2,13 +2,15 @@
 
 A restaurant for [Ferrum](https://github.com/CBFerrum/Ferrum):
 - outlets, tables and menus;
-- orders for dine-in, takeaway and delivery, and kitchen tickets by station;
-- bills through ERP, and table reservations.
+- orders for dine-in, takeaway and delivery, with choices (modifiers), and kitchen tickets by station;
+- bills through ERP, one or one for each seat, paid at the table with tips;
+- the stock its dishes use, taken from the outlet's store by their recipes;
+- table reservations.
 
 | | |
 |---|---|
 | 🍽️ App | `restaurant`, native, in the server |
-| 🧩 Package | `restaurant` (needs ERP's selling and accounting) |
+| 🧩 Package | `restaurant` (needs ERP's selling, accounting, inventory and manufacturing) |
 | 🖥️ Interface | its own, at `/restaurant/`: the floor and the kitchen, and the records |
 | 🔐 Roles | Restaurant Manager, Server, Kitchen |
 | 📜 Licence | AGPL-3.0-only |
@@ -17,7 +19,14 @@ A restaurant for [Ferrum](https://github.com/CBFerrum/Ferrum):
 
 - **Priced from the menu.** An order's lines are priced from the outlet's active menu when they are
   taken, and keep that price. A dish not on the menu, or not available today, is refused.
+- **Choices.** A menu lists the modifiers its dishes are ordered with (Extra Cheese, No Onion), each
+  for one dish or every dish, with a price on top. A line names its choices; they are priced with
+  it, written as the menu writes them and sent to the kitchen with the dish. A new line whose dish or
+  choices change is priced again; once sent, they are kept.
 - **One open order to a table.** The table shows as taken until the order is billed or cancelled.
+- **Moved and merged.** An order moves to another table of its outlet, its kitchen tickets with it.
+  Moved to a table with an open order, its dishes and guests join that order, and it closes as
+  Merged, pointing at it; its tickets carry on for the order it joined.
 - **The kitchen by station.** Sending an order makes one ticket for each station (grill, kitchen,
   bar, pastry) with its new lines. A ticket goes from queued through preparing and ready to served,
   and the order's lines follow it.
@@ -27,7 +36,18 @@ A restaurant for [Ferrum](https://github.com/CBFerrum/Ferrum):
   state is the kitchen's to move on: a person only voids it. An order with something sent cannot be
   cancelled: bill it, or void those lines first.
 - **Bills through ERP.** Billing makes a draft Sales Invoice of the order's lines, to its customer or
-  the outlet's walk-in customer. The order closes and the table is free.
+  the outlet's walk-in customer, or one for each seat when split by seat (each line then has its
+  seat). The order closes and the table is free.
+- **Paid at the table.** Take Payment pays one of the order's bills by cash or card, into the
+  outlet's cash or card account, in full or in part (a bill shared by two guests). The invoice is
+  submitted if it is still a draft, and the payment is a payment entry against it in ERP. A tip on
+  top is credited to the outlet's tips account, owed to the staff. Every bill paid, the order is
+  Settled. The floor lists the bills still to be paid.
+- **Stock by recipe.** With a store, billing takes what the dishes use from it in one Material Issue
+  in ERP, at the cost of goods sold: each dish's recipe (its item's bill of materials, scrap
+  included, as manufacturing takes it), or the dish's item itself when it is a stock item without
+  one (a bottled drink), with what its choices add or leave out. When the store does not hold it,
+  nothing is billed until it does (or the company allows negative stock).
 - **Takeaway and delivery.** Started from the floor. A delivery needs an address and a phone, goes
   out once the kitchen has made each dish, then arrives.
 - **The floor starts an order.** A free table opens a new order for that table and its outlet; an
@@ -46,19 +66,25 @@ cd ui && npm run build && npm run check
 - a table's order through the kitchen to the bill;
 - a voided line;
 - a takeaway, and a delivery;
+- choices priced and sent to the kitchen;
+- a party moved to a bigger table, and another merged into it;
+- bills by seat, paid by card with a tip and by cash in parts;
+- the dishes' recipes taken from the store, and a store that runs short;
 - reservations;
 - who may do what.
 
 ## Not yet
 
-- Modifiers and combos, splitting a bill, tips, and payment at the table (ERP settles the invoice).
-- Stock used by recipes, and delivery platforms.
-- Kitchen display screens beyond the page, and printers.
+- Combos and set menus, splitting a bill equally into invoices (it is paid in parts instead), and
+  card payments through a terminal or gateway (the payment is recorded, not taken).
+- Paying tips out to the staff (payroll's), and food voided after it was made counted as waste.
+- Delivery platforms, kitchen display screens beyond the page, and printers.
 
 ## Changelog
 
 | Version | Highlights |
 |---|---|
+| **0.3.0** | Choices priced on top of their dish; orders moved and merged between tables; bills by seat, paid at the table by cash or card with tips through ERP; dishes' recipes taken from the store (FEO-046). Names in Arabic and Hindi for tables, orders, servers and the bar corrected. |
 | **0.2.7** | Its names in Arabic and Hindi. |
 | **0.2.6** | The assistant knows its records. |
 | **0.2.5** | Rebuilt with Ferrum-Frontend 5b22e7b: its own words in Arabic and Hindi. |
