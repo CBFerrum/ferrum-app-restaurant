@@ -43,6 +43,10 @@ A restaurant for [Ferrum](https://github.com/CBFerrum/Ferrum):
   submitted if it is still a draft, and the payment is a payment entry against it in ERP. A tip on
   top is credited to the outlet's tips account, owed to the staff. Every bill paid, the order is
   Settled. The floor lists the bills still to be paid.
+- **On a hotel guest's room.** Where Hospitality is installed too, a bill may go on a guest's room
+  (Paid By Room): it becomes a room charge, checked against the guest in the room and posted to
+  their folio, and the hotel invoices it with the room; the bill's own draft invoice is dropped.
+  It is the hotel's Outlet Cashier's right, and a bill goes on a room whole and unpaid.
 - **Stock by recipe.** With a store, billing takes what the dishes use from it in one Material Issue
   in ERP, at the cost of goods sold: each dish's recipe (its item's bill of materials, scrap
   included, as manufacturing takes it), or the dish's item itself when it is a stock item without
@@ -84,6 +88,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.3.1** | A bill on a hotel guest's room, through Hospitality's room charges (FEO-045). |
 | **0.3.0** | Choices priced on top of their dish; orders moved and merged between tables; bills by seat, paid at the table by cash or card with tips through ERP; dishes' recipes taken from the store (FEO-046). Names in Arabic and Hindi for tables, orders, servers and the bar corrected. |
 | **0.2.7** | Its names in Arabic and Hindi. |
 | **0.2.6** | The assistant knows its records. |
