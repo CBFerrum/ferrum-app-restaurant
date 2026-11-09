@@ -1,5 +1,5 @@
 // The kitchen: tickets not yet served, oldest first, by station, each moved on from where it is.
-// A dish voided on its order is struck off, not to be made.
+// A dish shows the choices it was ordered with; one voided on its order is struck off, not to be made.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, docPath, refusal, t as tr, isolate } from "@ferrum/client";
@@ -10,7 +10,7 @@ interface Ticket {
   station: string;
   table_label: string;
   status: "Queued" | "Preparing" | "Ready" | "Served" | "Voided";
-  items?: { dish: string; qty: number; note?: string | null; voided?: boolean | null }[];
+  items?: { dish: string; qty: number; modifiers?: string | null; note?: string | null; voided?: boolean | null }[];
 }
 
 /** What a ticket's next step is, from its status. */
@@ -65,7 +65,8 @@ export function Kitchen() {
                       </span>
                     ) : (
                       <>
-                        {i.qty} × {isolate(i.dish)} {i.note ? <span className="faint">({isolate(i.note)})</span> : null}
+                        {i.qty} × {isolate(i.dish)} {i.modifiers ? <strong>· {isolate(i.modifiers)}</strong> : null}{" "}
+                        {i.note ? <span className="faint">({isolate(i.note)})</span> : null}
                       </>
                     )}
                   </li>

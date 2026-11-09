@@ -1,9 +1,12 @@
 //! Restaurant (FERRUM-INDUSTRY-002): outlets, tables and menus; orders for dine-in, takeaway and
 //! delivery; kitchen tickets by station; bills through ERP; and table reservations.
 //!
-//! * `orders`: an order's lines priced from its outlet's menu when taken; one open order to a table;
-//!   new lines sent to the kitchen as a ticket for each station; what went to the kitchen is voided,
-//!   not edited; billing makes the invoice and frees the table; a delivery goes out and arrives.
+//! * `orders`: an order's lines priced from its outlet's menu when taken, their choices on top; one
+//!   open order to a table, moved to another or merged into the order there; new lines sent to the
+//!   kitchen as a ticket for each station; what went to the kitchen is voided, not edited; a
+//!   delivery goes out and arrives.
+//! * `bills`: billing through ERP, as one invoice or one for each seat, taking what the dishes use
+//!   from the outlet's store by their recipes; payments at the table by cash or card, with tips.
 //! * `kitchen`: a station's ticket from queued through preparing and ready to served, its order's
 //!   lines following.
 //! * `reservations`: a table holds one party at a time, and no more than it seats.
@@ -11,6 +14,7 @@
 //! Adapted from ERPNext 12's Restaurant module (GPL-3.0; docs/PROVENANCE.md). Hooks are registered
 //! per entity, so a workspace without the `restaurant` package never runs them.
 
+mod bills;
 mod kitchen;
 mod orders;
 mod reservations;
@@ -34,6 +38,7 @@ pub fn packages() -> std::result::Result<Vec<ferrum_meta::Package>, ferrum_meta:
 /// Registers this app's document hooks.
 pub fn register(hooks: &mut HookRegistry) {
     hooks
+        .register("Outlet", Arc::new(bills::OutletHook))
         .register("RestaurantOrder", Arc::new(orders::OrderHook))
         .register("KitchenTicket", Arc::new(kitchen::TicketHook))
         .register("TableReservation", Arc::new(reservations::ReservationHook));
