@@ -65,19 +65,12 @@ fn priced_key(dish: &str, choices: &[String]) -> String {
     format!("{}|{}", dish.trim().to_lowercase(), c.join(","))
 }
 
-/// The lines that went to the kitchen: (id, dish, qty, choices).
-fn sent(doc: &Doc) -> Vec<(String, String, i64, String)> {
-    let mut out: Vec<(String, String, i64, String)> = rows(doc, "lines")
+/// The lines that went to the kitchen: (id, dish).
+fn sent(doc: &Doc) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = rows(doc, "lines")
         .iter()
         .filter(|l| s(l, "state").is_some_and(|st| st != "New"))
-        .map(|l| {
-            (
-                s(l, "id").unwrap_or_default().to_string(),
-                s(l, "dish").unwrap_or_default().to_string(),
-                l.get("qty").and_then(Value::as_i64).unwrap_or(0),
-                s(l, "modifiers").unwrap_or_default().to_string(),
-            )
-        })
+        .map(|l| (s(l, "id").unwrap_or_default().to_string(), s(l, "dish").unwrap_or_default().to_string()))
         .collect();
     out.sort();
     out
@@ -165,21 +158,12 @@ impl DocHook for OrderHook {
             if s(o, "status") != Some("Open") {
                 return Err(Error::invalid(format!("this order is {}: it does not change", s(o, "status").unwrap_or("closed").to_lowercase())));
             }
-            // What went to the kitchen stays as it went: void a line rather than change it.
-            let before: BTreeMap<String, (String, i64, String)> = sent(o).into_iter().map(|(i, d, q, m)| (i, (d, q, m))).collect();
+            // What went to the kitchen stays as it went: its dish, choices, quantity and note are
+            // read-only once sent (the server ignores a change to them), and the line is voided
+            // rather than removed.
             let lines = rows(doc, "lines");
-            for (line, (dish, qty, mods)) in &before {
-                match lines.iter().find(|l| s(l, "id") == Some(line.as_str())) {
-                    None => return Err(Error::field("lines", format!("{dish} went to the kitchen: void it rather than remove it"))),
-                    Some(l)
-                        if s(l, "dish") != Some(dish.as_str())
-                            || l.get("qty").and_then(Value::as_i64) != Some(*qty)
-                            || s(l, "modifiers").unwrap_or_default() != mods =>
-                    {
-                        return Err(Error::field("lines", format!("{dish} went to the kitchen: void it and order again")));
-                    }
-                    _ => {}
-                }
+            if let Some((_, dish)) = sent(o).into_iter().find(|(line, _)| !lines.iter().any(|l| s(l, "id") == Some(line.as_str()))) {
+                return Err(Error::field("lines", format!("{dish} went to the kitchen: void it rather than remove it")));
             }
         }
         let outlet = id(doc, "outlet").ok_or_else(|| Error::field("outlet", "is required"))?;
@@ -321,7 +305,7 @@ async fn send(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
 /// to be served, and a ticket with nothing left to make is Voided: the kitchen stops making it.
 async fn strike(hc: &mut HookCtx<'_>, doc: &Doc, old: Option<&Doc>) -> Result<()> {
     let Some(old) = old else { return Ok(()) };
-    let sent_before: Vec<String> = sent(old).into_iter().map(|(i, _, _, _)| i).collect();
+    let sent_before: Vec<String> = sent(old).into_iter().map(|(i, _)| i).collect();
     let voided: Vec<String> = rows(doc, "lines")
         .iter()
         .filter(|l| s(l, "state") == Some("Void"))

@@ -192,13 +192,21 @@ async fn scenario() {
     let mut again = now["lines"].as_array().unwrap().clone();
     again[0]["state"] = json!("New");
     refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": again})), None).await, "invalid", "the kitchen moves it on");
-    // A sent line is voided, not edited; another dish comes as a line of its own.
+    // A sent line is voided, not edited (its dish, quantity, choices and note are read-only once sent, and a change
+    // sent anyway is ignored); another dish comes as a line of its own.
     let mut changed = now["lines"].as_array().unwrap().clone();
     changed[0]["qty"] = json!(3);
-    refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": changed})), None).await, "invalid", "void it and order again");
-    let mut renamed = now["lines"].as_array().unwrap().clone();
-    renamed[0]["dish"] = json!("Dal Makhani");
-    refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": renamed})), None).await, "invalid", "void it and order again");
+    changed[0]["dish"] = json!("Dal Makhani");
+    changed[0]["note"] = json!("extra spicy");
+    let kept = t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": changed})), None).await.expect("nothing to refuse");
+    assert_eq!(
+        (kept["lines"][0]["dish"].clone(), kept["lines"][0]["qty"].clone(), kept["lines"][0]["note"].clone()),
+        (now["lines"][0]["dish"].clone(), now["lines"][0]["qty"].clone(), now["lines"][0]["note"].clone())
+    );
+    assert_eq!(kept["total"], now["total"], "what was ordered is what is billed");
+    let mut removed = now["lines"].as_array().unwrap().clone();
+    removed.remove(0);
+    refused(t.k.update(&server, "RestaurantOrder", oid, obj(json!({"lines": removed})), None).await, "invalid", "void it rather than remove it");
     // The menu's price changes after the order was taken: what was ordered keeps its price.
     let mut dishes = t.get("Menu", menu).await["dishes"].as_array().unwrap().clone();
     for d in dishes.iter_mut().filter(|d| d["dish_name"] == "Paneer Tikka") {
@@ -390,7 +398,12 @@ async fn scenario() {
     assert_eq!(t.get("KitchenTicket", grill).await["items"][0]["modifiers"], "No Onion, Extra Cheese");
     let mut ls = t.get("RestaurantOrder", pid).await["lines"].as_array().unwrap().clone();
     ls[0]["modifiers"] = json!("No Onion");
-    refused(t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await, "invalid", "void it and order again");
+    let kept = t.k.update(&server, "RestaurantOrder", pid, obj(json!({"lines": ls})), None).await.expect("nothing to refuse");
+    assert_eq!(
+        (kept["lines"][0]["modifiers"].clone(), dec(&kept["total"])),
+        (json!("No Onion, Extra Cheese"), 1080.0),
+        "sent, the choices stay as the grill was told"
+    );
 
     // The party moves to a bigger table; its tickets follow it.
     refused(t.k.run_action(&server, "RestaurantOrder", pid, "move_to", json!({"table": t2.to_string()})).await, "invalid", "is the order's table already");
