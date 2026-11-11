@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+The interface follows the upgraded design system, rebuilt with Ferrum-Frontend 0a47157. Text uses the kit's type roles (nothing under 12px) and controls its height tokens; loading shows skeletons shaped like what is coming; empty, no matches, denied, offline and failed are told apart; status colours come from stored state ids. The interface check now runs the UI lint against an empty baseline. The home is rebuilt on the kit's work-home pattern: one page title, the main action as a button, queues with their counts, status at its natural width; its other own pages follow the same anatomy.
+
 ## 0.3.1
 
 A bill on a hotel guest's room (FEO-045). Where Hospitality is installed too, Take Payment may put a bill on a room (Paid By Room, with the room and the guest's name): it becomes one of Hospitality's room charges, checked against the guest in the room and posted to their folio, so the hotel invoices it with the room as the outlet's Room Charge Item, and the bill's own draft invoice is dropped. Putting it there is Hospitality's Outlet Cashier's right. A bill goes on a room whole, without a tip, and not after part of it was paid here. The outlet names its hotel (Hotel Code). The order is Settled once every bill is paid or on a room.

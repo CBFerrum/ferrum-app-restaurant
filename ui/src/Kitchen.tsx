@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, docPath, refusal, t as tr, isolate } from "@ferrum/client";
-import { Badge, Button, ErrorState, PageLoading, toast, useShellTitle } from "@ferrum/kit";
+import { Button, HomeSkeleton, LoadFailed, PageHead, PageStack, StatePanel, StatusBadge, toast, type Tone } from "@ferrum/kit";
 
 interface Ticket {
   id: string;
@@ -14,6 +14,9 @@ interface Ticket {
 }
 
 /** What a ticket's next step is, from its status. */
+/** KitchenTicket.status as stored (packages/restaurant/entities), for `StatusBadge`. */
+const TICKET_TONES: Readonly<Record<Ticket["status"], Tone>> = { Queued: "neutral", Preparing: "amber", Ready: "green", Served: "neutral", Voided: "neutral" };
+
 export const NEXT: Record<Ticket["status"], { action: string; label: string } | null> = {
   Queued: { action: "start", get label() { return tr("Start it"); } },
   Preparing: { action: "ready", get label() { return tr("Ready"); } },
@@ -23,7 +26,6 @@ export const NEXT: Record<Ticket["status"], { action: string; label: string } | 
 };
 
 export function Kitchen() {
-  useShellTitle(tr("Kitchen"));
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["restaurant", "kitchen"],
@@ -38,26 +40,36 @@ export function Kitchen() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["restaurant"] }),
     onError: (e) => toast(refusal(e), "error"),
   });
-  if (q.isPending) return <PageLoading />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  const title = tr("The kitchen");
+  const back = { to: "/", label: tr("The floor") };
+  if (q.isPending) return <PageStack><PageHead title={title} back={back} /><HomeSkeleton queues={3} /></PageStack>;
+  if (q.isError) return <PageStack><PageHead title={title} back={back} /><LoadFailed error={q.error} onRetry={() => void q.refetch()} /></PageStack>;
+  if (!q.data.length)
+    return (
+      <PageStack>
+        <PageHead title={title} back={back} />
+        <StatePanel kind="empty" title={tr("No tickets waiting")}>{tr("Tickets appear here as soon as the floor sends dishes to a station.")}</StatePanel>
+      </PageStack>
+    );
+  // A ticket moves on only when the server has taken the step: the list is fetched again after it, never changed in place.
   return (
-    <div className="np-page">
-      <h2>{tr("The kitchen")}</h2>
-      <div className="np-columns">
+    <PageStack>
+      <PageHead title={title} back={back} />
+      <div className="kitchen-grid">
         {q.data.map((t) => {
           const next = NEXT[t.status];
           return (
-            <section key={t.id} className="card card-pad stack" aria-label={`${t.station}, ${t.table_label}`}>
+            <section key={t.id} className="card card-pad stack kitchen-ticket" aria-label={`${t.station}, ${t.table_label}`}>
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <strong>{isolate(t.station)}</strong>
-                <Badge tone={t.status === "Ready" ? "green" : t.status === "Preparing" ? "amber" : "neutral"}>{isolate(t.status)}</Badge>
+                <strong className="text-lg">{isolate(t.station)}</strong>
+                <StatusBadge value={t.status} tones={TICKET_TONES} />
               </div>
-              <div className="faint">{isolate(t.table_label)}</div>
-              <ul>
+              <div className="text-base text-muted-foreground">{isolate(t.table_label)}</div>
+              <ul className="stack text-lg">
                 {(t.items ?? []).map((i, n) => (
                   <li key={n}>
                     {i.voided ? (
-                      <span className="faint">
+                      <span className="text-muted-foreground">
                         <s>
                           {i.qty} × {isolate(i.dish)}
                         </s>{isolate(" ")}
@@ -66,14 +78,14 @@ export function Kitchen() {
                     ) : (
                       <>
                         {i.qty} × {isolate(i.dish)} {i.modifiers ? <strong>· {isolate(i.modifiers)}</strong> : null}{" "}
-                        {i.note ? <span className="faint">({isolate(i.note)})</span> : null}
+                        {i.note ? <span className="text-muted-foreground">({isolate(i.note)})</span> : null}
                       </>
                     )}
                   </li>
                 ))}
               </ul>
               {next && (
-                <Button size="sm" loading={move.isPending && move.variables?.id === t.id} onClick={() => move.mutate({ id: t.id, action: next.action })}>
+                <Button className="kitchen-step" loading={move.isPending && move.variables?.id === t.id} onClick={() => move.mutate({ id: t.id, action: next.action })}>
                   {isolate(next.label)}
                 </Button>
               )}
@@ -81,6 +93,6 @@ export function Kitchen() {
           );
         })}
       </div>
-    </div>
+    </PageStack>
   );
 }

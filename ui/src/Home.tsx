@@ -3,9 +3,8 @@
 // to pay opens its order, where payment is taken; the kitchen has its own page.
 
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
 import { api, docPath, t as tr, isolate } from "@ferrum/client";
-import { Badge, EmptyState, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
+import { ButtonLink, HomeSkeleton, LoadFailed, PageHead, PageStack, Queue, QueueGrid, QueueItem, StatePanel, StatusBadge, Tile, TileGrid, type Tone } from "@ferrum/kit";
 
 interface Row {
   id: string;
@@ -37,13 +36,18 @@ export function byTable(orders: Row[]): Map<string, Row> {
   return out;
 }
 
+/** A table on the floor is free or taken (it has an open order); the badge's tone comes from that state id, not its words. */
+export const TABLE_TONES: Readonly<Record<"Free" | "Taken", Tone>> = { Free: "green", Taken: "amber" };
+
 /** The orders billed and not yet paid, oldest first. */
 export function toPay(orders: Row[]): Row[] {
   return orders.filter((o) => o.status === "Billed");
 }
 
+/** The most a queue lists before "and N more" opens the orders. */
+const LIMIT = 5;
+
 export function Home() {
-  useShellTitle(tr("Restaurant"));
   const q = useQuery({
     queryKey: ["restaurant", "floor"],
     queryFn: async () => {
@@ -56,72 +60,84 @@ export function Home() {
     },
     refetchInterval: 15_000,
   });
-  if (q.isPending) return <PageLoading />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  const title = tr("The floor");
+  if (q.isPending) return <PageStack><PageHead title={title} /><HomeSkeleton queues={2} /></PageStack>;
+  if (q.isError) return <PageStack><PageHead title={title} /><LoadFailed error={q.error} onRetry={() => void q.refetch()} /></PageStack>;
   const open = byTable(q.data.orders);
   const away = q.data.orders.filter((o) => o.status === "Open" && o.order_type !== "Dine In");
   const unpaid = toPay(q.data.orders);
+  const tableName = new Map(q.data.tables.map((t) => [t.id, String(t.table_name)]));
   if (!q.data.tables.length)
     return (
-      <div className="np-page">
-        <EmptyState title={tr("No tables yet")} icon="list">
-          <p className="muted">
-            {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}{isolate(" ")}
-            {q.data.outlets.length ? <Link to="/e/DiningTable/new">{tr("Add a table")}</Link> : <Link to="/e/Outlet/new">{tr("Add an outlet")}</Link>}
-          </p>
-        </EmptyState>
-      </div>
+      <PageStack>
+        <PageHead title={title} />
+        <StatePanel
+          kind="empty"
+          title={tr("No tables yet")}
+          action={
+            q.data.outlets.length ? (
+              <ButtonLink to="/e/DiningTable/new" variant="primary" icon="plus">{tr("Add a table")}</ButtonLink>
+            ) : (
+              <ButtonLink to="/e/Outlet/new" variant="primary" icon="plus">{tr("Add an outlet")}</ButtonLink>
+            )
+          }
+        >
+          {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}
+        </StatePanel>
+      </PageStack>
     );
+  const order = (o: Row) => String(o.number ?? "") || tr("Order");
   return (
-    <div className="np-page">
-      <header className="row" style={{ justifyContent: "space-between" }}>
-        <h2>{tr("The floor")}</h2>
-        <span className="row">
-          <Link to={awayLink("Takeaway", q.data.outlets)}>{tr("New takeaway")}</Link>
-          <Link to={awayLink("Delivery", q.data.outlets)}>{tr("New delivery")}</Link>
-          <Link to="/kitchen">{tr("The kitchen")}</Link>
-        </span>
-      </header>
-      <div className="np-columns">
+    <PageStack gap="lg">
+      <PageHead
+        title={title}
+        description={isolate(tr("{taken} of {total} tables taken", { taken: open.size, total: q.data.tables.length }))}
+        actions={
+          <>
+            <ButtonLink to={awayLink("Takeaway", q.data.outlets)} variant="primary" icon="plus">{tr("New takeaway")}</ButtonLink>
+            <ButtonLink to={awayLink("Delivery", q.data.outlets)} icon="plus">{tr("New delivery")}</ButtonLink>
+            <ButtonLink to="/kitchen">{tr("The kitchen")}</ButtonLink>
+          </>
+        }
+      />
+      <TileGrid label={title}>
         {q.data.tables.map((t) => {
-          const order = open.get(t.id);
+          const taken = open.get(t.id);
           return (
-            <Link key={t.id} className="card card-pad stack" to={tableLink(t, order)}>
-              <strong>{isolate(String(t.table_name))}</strong>
-              <span className="faint">{tr("{value} seats", { value: String(t.seats) })}</span>
-              {order ? <Badge tone="amber">{tr("Taken · {value}", { value: String(order.number ?? "") })}</Badge> : <Badge tone="green">{tr("Free")}</Badge>}
-            </Link>
+            <Tile
+              key={t.id}
+              to={tableLink(t, taken)}
+              title={isolate(String(t.table_name))}
+              meta={<span>{tr("{value} seats", { value: String(t.seats) })}</span>}
+              status={taken ? <StatusBadge value="Taken" tones={TABLE_TONES} label={tr("Taken · {value}", { value: String(taken.number ?? "") })} /> : <StatusBadge value="Free" tones={TABLE_TONES} label={tr("Free")} />}
+            />
           );
         })}
-      </div>
-      <section className="card card-pad stack" aria-label={tr("Takeaway and delivery")}>
-        <h3>{tr("Takeaway and delivery ({length})", { length: away.length })}</h3>
-        <ul className="stack">
-          {away.map((o) => (
-            <li key={o.id}>
-              <Link to={`/e/RestaurantOrder/${o.id}`}>
-                {isolate(String(o.number ?? ""))} · {isolate(String(o.order_type))} {o.delivery_status ? `· ${String(o.delivery_status)}` : ""}
-              </Link>
-            </li>
+      </TileGrid>
+      <QueueGrid>
+        <Queue title={tr("Bills to pay")} count={unpaid.length} tone={unpaid.length ? "attention" : "default"} empty={tr("Every bill is paid.")} more={{ to: "/e/RestaurantOrder", count: unpaid.length - LIMIT }}>
+          {unpaid.slice(0, LIMIT).map((o) => (
+            <QueueItem
+              key={o.id}
+              to={`/e/RestaurantOrder/${o.id}`}
+              title={isolate(order(o))}
+              meta={isolate(tableName.get(String(o.table)) ?? String(o.order_type ?? ""))}
+              trailing={<span className="num">{isolate(String(o.total ?? ""))}</span>}
+            />
           ))}
-        </ul>
-      </section>
-      <section className="card card-pad stack" aria-label={tr("Bills to pay")}>
-        <h3>{tr("Bills to pay ({length})", { length: unpaid.length })}</h3>
-        {unpaid.length ? (
-          <ul className="stack">
-            {unpaid.map((o) => (
-              <li key={o.id}>
-                <Link to={`/e/RestaurantOrder/${o.id}`}>
-                  {isolate(String(o.number ?? ""))} · {isolate(String(o.total ?? ""))}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">{tr("Every bill is paid.")}</p>
-        )}
-      </section>
-    </div>
+        </Queue>
+        <Queue title={tr("Takeaway and delivery")} count={away.length} more={{ to: "/e/RestaurantOrder", count: away.length - LIMIT }}>
+          {away.slice(0, LIMIT).map((o) => (
+            <QueueItem
+              key={o.id}
+              to={`/e/RestaurantOrder/${o.id}`}
+              title={isolate(order(o))}
+              meta={isolate(String(o.order_type))}
+              trailing={o.delivery_status ? <StatusBadge value={o.delivery_status} /> : undefined}
+            />
+          ))}
+        </Queue>
+      </QueueGrid>
+    </PageStack>
   );
 }
