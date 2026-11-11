@@ -122,7 +122,7 @@ export function Home() {
               to={`/e/RestaurantOrder/${o.id}`}
               title={isolate(order(o))}
               meta={isolate(tableName.get(String(o.table)) ?? String(o.order_type ?? ""))}
-              trailing={<span className="text-sm font-medium tabular-nums">{isolate(String(o.total ?? ""))}</span>}
+              trailing={<span className="num">{isolate(String(o.total ?? ""))}</span>}
             />
           ))}
         </Queue>
