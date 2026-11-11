@@ -5,7 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { api, docPath, t as tr, isolate } from "@ferrum/client";
-import { Badge, EmptyState, ErrorState, PageLoading, useShellTitle } from "@ferrum/kit";
+import { Badge, EmptyState, ErrorState, ListSkeleton, useShellTitle } from "@ferrum/kit";
 
 interface Row {
   id: string;
@@ -56,7 +56,7 @@ export function Home() {
     },
     refetchInterval: 15_000,
   });
-  if (q.isPending) return <PageLoading />;
+  if (q.isPending) return <ListSkeleton className="np-page" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const open = byTable(q.data.orders);
   const away = q.data.orders.filter((o) => o.status === "Open" && o.order_type !== "Dine In");
