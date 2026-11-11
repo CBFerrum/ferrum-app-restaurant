@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, docPath, refusal, t as tr, isolate } from "@ferrum/client";
-import { Button, ErrorState, ListSkeleton, StatusBadge, toast, useShellTitle } from "@ferrum/kit";
+import { Button, HomeSkeleton, LoadFailed, PageHead, StatePanel, StatusBadge, toast } from "@ferrum/kit";
 
 interface Ticket {
   id: string;
@@ -26,7 +26,6 @@ export const NEXT: Record<Ticket["status"], { action: string; label: string } | 
 };
 
 export function Kitchen() {
-  useShellTitle(tr("Kitchen"));
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["restaurant", "kitchen"],
@@ -41,26 +40,36 @@ export function Kitchen() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["restaurant"] }),
     onError: (e) => toast(refusal(e), "error"),
   });
-  if (q.isPending) return <ListSkeleton className="np-page" />;
-  if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  const title = tr("The kitchen");
+  const back = { to: "/", label: tr("The floor") };
+  if (q.isPending) return <><PageHead title={title} back={back} /><HomeSkeleton queues={3} /></>;
+  if (q.isError) return <><PageHead title={title} back={back} /><LoadFailed error={q.error} onRetry={() => void q.refetch()} /></>;
+  if (!q.data.length)
+    return (
+      <>
+        <PageHead title={title} back={back} />
+        <StatePanel kind="empty" title={tr("No tickets waiting")}>{tr("Tickets appear here as soon as the floor sends dishes to a station.")}</StatePanel>
+      </>
+    );
+  // A ticket moves on only when the server has taken the step: the list is fetched again after it, never changed in place.
   return (
-    <div className="np-page">
-      <h2>{tr("The kitchen")}</h2>
-      <div className="np-columns">
+    <>
+      <PageHead title={title} back={back} />
+      <div className="kitchen-grid">
         {q.data.map((t) => {
           const next = NEXT[t.status];
           return (
-            <section key={t.id} className="card card-pad stack" aria-label={`${t.station}, ${t.table_label}`}>
+            <section key={t.id} className="card card-pad stack kitchen-ticket" aria-label={`${t.station}, ${t.table_label}`}>
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <strong>{isolate(t.station)}</strong>
+                <strong className="text-lg">{isolate(t.station)}</strong>
                 <StatusBadge value={t.status} tones={TICKET_TONES} />
               </div>
-              <div className="faint">{isolate(t.table_label)}</div>
-              <ul>
+              <div className="text-base text-muted-foreground">{isolate(t.table_label)}</div>
+              <ul className="stack text-lg">
                 {(t.items ?? []).map((i, n) => (
                   <li key={n}>
                     {i.voided ? (
-                      <span className="faint">
+                      <span className="text-muted-foreground">
                         <s>
                           {i.qty} × {isolate(i.dish)}
                         </s>{isolate(" ")}
@@ -69,14 +78,14 @@ export function Kitchen() {
                     ) : (
                       <>
                         {i.qty} × {isolate(i.dish)} {i.modifiers ? <strong>· {isolate(i.modifiers)}</strong> : null}{" "}
-                        {i.note ? <span className="faint">({isolate(i.note)})</span> : null}
+                        {i.note ? <span className="text-muted-foreground">({isolate(i.note)})</span> : null}
                       </>
                     )}
                   </li>
                 ))}
               </ul>
               {next && (
-                <Button size="sm" loading={move.isPending && move.variables?.id === t.id} onClick={() => move.mutate({ id: t.id, action: next.action })}>
+                <Button className="kitchen-step" loading={move.isPending && move.variables?.id === t.id} onClick={() => move.mutate({ id: t.id, action: next.action })}>
                   {isolate(next.label)}
                 </Button>
               )}
@@ -84,6 +93,6 @@ export function Kitchen() {
           );
         })}
       </div>
-    </div>
+    </>
   );
 }
