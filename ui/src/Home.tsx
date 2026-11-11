@@ -4,7 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api, docPath, t as tr, isolate } from "@ferrum/client";
-import { ButtonLink, HomeSkeleton, LoadFailed, PageHead, Queue, QueueGrid, QueueItem, StatePanel, StatusBadge, Tile, TileGrid, type Tone } from "@ferrum/kit";
+import { ButtonLink, HomeSkeleton, LoadFailed, PageHead, PageStack, Queue, QueueGrid, QueueItem, StatePanel, StatusBadge, Tile, TileGrid, type Tone } from "@ferrum/kit";
 
 interface Row {
   id: string;
@@ -61,15 +61,15 @@ export function Home() {
     refetchInterval: 15_000,
   });
   const title = tr("The floor");
-  if (q.isPending) return <><PageHead title={title} /><HomeSkeleton queues={2} /></>;
-  if (q.isError) return <><PageHead title={title} /><LoadFailed error={q.error} onRetry={() => void q.refetch()} /></>;
+  if (q.isPending) return <PageStack><PageHead title={title} /><HomeSkeleton queues={2} /></PageStack>;
+  if (q.isError) return <PageStack><PageHead title={title} /><LoadFailed error={q.error} onRetry={() => void q.refetch()} /></PageStack>;
   const open = byTable(q.data.orders);
   const away = q.data.orders.filter((o) => o.status === "Open" && o.order_type !== "Dine In");
   const unpaid = toPay(q.data.orders);
   const tableName = new Map(q.data.tables.map((t) => [t.id, String(t.table_name)]));
   if (!q.data.tables.length)
     return (
-      <>
+      <PageStack>
         <PageHead title={title} />
         <StatePanel
           kind="empty"
@@ -84,14 +84,14 @@ export function Home() {
         >
           {tr("Add an outlet with its company, a walk-in customer for bills that name nobody and its active menu, then its tables, and the floor shows here.")}
         </StatePanel>
-      </>
+      </PageStack>
     );
   const order = (o: Row) => String(o.number ?? "") || tr("Order");
   return (
-    <>
+    <PageStack gap="lg">
       <PageHead
         title={title}
-        description={tr("{taken} of {total} tables taken", { taken: open.size, total: q.data.tables.length })}
+        description={isolate(tr("{taken} of {total} tables taken", { taken: open.size, total: q.data.tables.length }))}
         actions={
           <>
             <ButtonLink to={awayLink("Takeaway", q.data.outlets)} variant="primary" icon="plus">{tr("New takeaway")}</ButtonLink>
@@ -114,7 +114,7 @@ export function Home() {
           );
         })}
       </TileGrid>
-      <QueueGrid className="mt-6">
+      <QueueGrid>
         <Queue title={tr("Bills to pay")} count={unpaid.length} tone={unpaid.length ? "attention" : "default"} empty={tr("Every bill is paid.")} more={{ to: "/e/RestaurantOrder", count: unpaid.length - LIMIT }}>
           {unpaid.slice(0, LIMIT).map((o) => (
             <QueueItem
@@ -138,6 +138,6 @@ export function Home() {
           ))}
         </Queue>
       </QueueGrid>
-    </>
+    </PageStack>
   );
 }
