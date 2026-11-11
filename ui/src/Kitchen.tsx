@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, docPath, refusal, t as tr, isolate } from "@ferrum/client";
-import { Badge, Button, ErrorState, PageLoading, toast, useShellTitle } from "@ferrum/kit";
+import { Button, ErrorState, ListSkeleton, StatusBadge, toast, useShellTitle } from "@ferrum/kit";
 
 interface Ticket {
   id: string;
@@ -14,6 +14,9 @@ interface Ticket {
 }
 
 /** What a ticket's next step is, from its status. */
+/** KitchenTicket.status as stored (packages/restaurant/entities), for `StatusBadge`. */
+const TICKET_TONES = { Queued: "neutral", Preparing: "amber", Ready: "green", Served: "neutral", Voided: "neutral" } as const;
+
 export const NEXT: Record<Ticket["status"], { action: string; label: string } | null> = {
   Queued: { action: "start", get label() { return tr("Start it"); } },
   Preparing: { action: "ready", get label() { return tr("Ready"); } },
@@ -38,7 +41,7 @@ export function Kitchen() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["restaurant"] }),
     onError: (e) => toast(refusal(e), "error"),
   });
-  if (q.isPending) return <PageLoading />;
+  if (q.isPending) return <ListSkeleton className="np-page" />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   return (
     <div className="np-page">
@@ -50,7 +53,7 @@ export function Kitchen() {
             <section key={t.id} className="card card-pad stack" aria-label={`${t.station}, ${t.table_label}`}>
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <strong>{isolate(t.station)}</strong>
-                <Badge tone={t.status === "Ready" ? "green" : t.status === "Preparing" ? "amber" : "neutral"}>{isolate(t.status)}</Badge>
+                <StatusBadge value={t.status} tones={TICKET_TONES} />
               </div>
               <div className="faint">{isolate(t.table_label)}</div>
               <ul>
