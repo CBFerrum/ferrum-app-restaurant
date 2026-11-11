@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { awayLink, byTable, tableLink, toPay } from "./Home";
+import { awayLink, byTable, TABLE_TONES, tableLink, toPay } from "./Home";
 import { NEXT } from "./Kitchen";
 
 describe("the floor and the kitchen", () => {
@@ -38,5 +38,10 @@ describe("the floor and the kitchen", () => {
   it("starts a takeaway at the only outlet, and leaves the outlet open when there are several", () => {
     expect(awayLink("Takeaway", [{ id: "out" }])).toBe("/e/RestaurantOrder/new?order_type=Takeaway&outlet=out");
     expect(awayLink("Delivery", [{ id: "a" }, { id: "b" }])).toBe("/e/RestaurantOrder/new?order_type=Delivery");
+  });
+
+  it("gives a table's badge its tone from its state, free or taken", () => {
+    expect(TABLE_TONES.Free).toBe("green");
+    expect(TABLE_TONES.Taken).toBe("amber");
   });
 });
