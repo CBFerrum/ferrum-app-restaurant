@@ -4,14 +4,19 @@
 @source "../../../ferrum/web/src";
 @source ".";
 
-.np-page {
+/* The kitchen display, read standing up: big tickets, and a step button no smaller than 44px on any screen. */
+.kitchen-grid {
   display: grid;
   gap: 16px;
-  padding: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  align-items: start;
 }
 
-.np-columns {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+.kitchen-ticket {
+  min-width: 0;
+}
+
+.kitchen-step {
+  width: 100%;
+  min-height: max(var(--control-h), calc(44 / 14 * 1rem));
 }
