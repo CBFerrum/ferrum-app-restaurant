@@ -88,6 +88,7 @@ cd ui && npm run build && npm run check
 
 | Version | Highlights |
 |---|---|
+| **0.3.3** | Rebuilt on the tuned design system: better menu icons, a lighter first page, a visible scroll cue, cleaner print. |
 | **0.3.2** | The redesigned interface: the upgraded design system, shaped loading, told-apart states. |
 | **0.3.1** | A bill on a hotel guest's room, through Hospitality's room charges (FEO-045). |
 | **0.3.0** | Choices priced on top of their dish; orders moved and merged between tables; bills by seat, paid at the table by cash or card with tips through ERP; dishes' recipes taken from the store (FEO-046). Names in Arabic and Hindi for tables, orders, servers and the bar corrected. |
