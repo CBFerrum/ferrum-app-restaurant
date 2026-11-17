@@ -274,12 +274,6 @@ pub(crate) async fn settle(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> R
             b
         })
         .collect();
-    // Billed before bills were kept: its one invoice.
-    if bills.is_empty()
-        && let Some(inv) = id(doc, "sales_invoice")
-    {
-        bills.push(obj(json!({"sales_invoice": inv.to_string(), "paid": "0", "tips": "0", "status": "Unpaid"})));
-    }
     let count = bills.len();
     let n = params.get("bill").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))).unwrap_or(1);
     let Some(at) = usize::try_from(n).ok().filter(|n| (1..=count).contains(n)).map(|n| n - 1) else {
