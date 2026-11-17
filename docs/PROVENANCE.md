@@ -14,6 +14,3 @@
   - the rule that a line is priced from the restaurant's active menu.
 - Its own: kitchen stations and tickets, voiding sent lines, takeaway and delivery, the reservation
   checks, and all the code.
-
-The copy read is in `ERP/referance/industry/erpnext-v12` on the machine this was written on (sparse:
-`erpnext/hotels` and `erpnext/restaurant`).

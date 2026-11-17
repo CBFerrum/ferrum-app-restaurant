@@ -37,7 +37,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 
 | | |
 |---|---|
-| **Version** | 0.3.3 |
+| **Version** | 0.3.4 |
 | **Kind** | Its own interface at `/restaurant/`: the floor and the kitchen. Orders, menus, tables, reservations and outlets open in the platform's records screens |
 | **What it adds** | 11 entities (6 you work with, 5 that sit inside them), 3 roles, 1 menu module, 1 package. It has no reports or print formats of its own |
 | **Depends on** | Ferrum platform `>=0.3.2, <0.4` and [ERP](https://github.com/CBFerrum/ferrum-app-erp) `>=0.1` (selling, accounting, inventory and manufacturing) |
@@ -108,7 +108,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 
 - **Three kinds.** Dine in (at a table), takeaway and delivery.
 - **The floor starts an order.** A free table opens a new order for that table and its outlet. An empty restaurant says what to set up first.
-- **One open order to a table.** The table shows as taken until the order is billed or cancelled.
+- **One open order to a table.** The table shows as taken until the order is billed or cancelled, and saving a second open order for it is refused (add to the first).
 - **Lines.** Dish, quantity, seat, choices and a note. A line has a state (New, Sent, Ready, Served, Void) that the kitchen moves on.
 - **Choices are priced with the line,** written as the menu writes them and sent to the kitchen with the dish. A new line whose dish or choices change is priced again. Once sent, they are kept.
 - **Guests, customer and contact.** The number of guests, an optional ERP customer, or a name and phone.
@@ -143,7 +143,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 ### 🪑 Reservations
 
 - **A table held for a party at a time:** outlet, table, guest name, phone, party size, start and end, and a state (Booked, Seated, Cancelled, No Show).
-- **A table holds one party at a time,** and no more than it seats. A cancelled reservation frees the time.
+- **A table is held for one party at a time,** and no more than it seats: a reservation that overlaps another booked or seated one for the table, or whose party is larger than the seats, is refused when it is saved. A cancelled reservation frees the time.
 - **Staff enter them.** There is no public reservation page yet.
 
 ### 🔐 Roles, privacy and APIs
@@ -273,6 +273,7 @@ Leaders: Toast, Square for Restaurants, Lightspeed Restaurant, TouchBistro and O
 
 ### ✅ Recently shipped
 
+- [x] **0.3.4:** the interface starts through the frontend's `mountApp`; no routes to the screens apps no longer have.
 - [x] **0.3.3:** the interface on the tuned design system, with better menu icons and cleaner print.
 - [x] **0.3.2:** the redesigned interface, with the floor and the kitchen on the work-home pattern.
 - [x] **0.3.1:** a bill on a hotel guest's room, through Hospitality's room charges.
