@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.6
+
+Needs the same platform as 0.3.5. No database change, no interface change.
+
+- Taking payment no longer makes up a bill for an order billed before orders kept their bills. Billing always keeps
+  them, so no order reaches payment without one.
+
 ## 0.3.5
 
 Needs the same platform as 0.3.4. A table is no longer double-booked by saves at the same moment: each
