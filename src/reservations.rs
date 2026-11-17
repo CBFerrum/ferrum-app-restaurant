@@ -43,10 +43,12 @@ impl DocHook for ReservationHook {
         if matches!(s(doc, "status"), Some("Cancelled" | "No Show")) {
             return Ok(());
         }
+        // The database holds the table to one party (the exclusion on TableReservation, which also
+        // refuses the one of two saved at once that commits second); this names the party holding it.
         let me = id(doc, "id").unwrap_or_else(Uuid::nil);
         let other: Option<String> = sqlx::query_scalar(
-            "select guest_name from e_table_reservation where tenant_id = $1 and \"table\" = $2 and id <> $3 and status in ('Booked', 'Seated') \
-             and starts_at < $5 and ends_at > $4 limit 1",
+            "select guest_name from e_table_reservation where tenant_id = $1 and \"table\" = $2 and id <> $3 \
+             and coalesce(status, '') not in ('Cancelled', 'No Show') and starts_at < $5 and ends_at > $4 limit 1",
         )
         .bind(tenant)
         .bind(table)

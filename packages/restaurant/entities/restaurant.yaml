@@ -195,4 +195,7 @@
     - {name: starts_at, type: datetime, required: true, in_list: true}
     - {name: ends_at, type: datetime, required: true}
     - {name: status, type: select, options: [Booked, Seated, Cancelled, No Show], default: Booked, in_list: true, in_filter: true}
+  # The database holds a table to one party at a time, whoever writes.
+  exclusion:
+    - {fields: [table], from: starts_at, to: ends_at, when_not: {status: [Cancelled, No Show]}, message: This table is held for another party then}
   list: {columns: [starts_at, guest_name, party, table, status], sort: starts_at asc}
