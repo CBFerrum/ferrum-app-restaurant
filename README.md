@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.5-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.6-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 
 | | |
 |---|---|
-| **Version** | 0.3.5 |
+| **Version** | 0.3.6 |
 | **Kind** | Its own interface at `/restaurant/`: the floor and the kitchen. Orders, menus, tables, reservations and outlets open in the platform's records screens |
 | **What it adds** | 11 entities (6 you work with, 5 that sit inside them), 3 roles, 1 menu module, 1 package. It has no reports or print formats of its own |
 | **Depends on** | Ferrum platform `>=0.3.2, <0.4` and [ERP](https://github.com/CBFerrum/ferrum-app-erp) `>=0.1` (selling, accounting, inventory and manufacturing) |
@@ -273,6 +273,7 @@ Leaders: Toast, Square for Restaurants, Lightspeed Restaurant, TouchBistro and O
 
 ### ✅ Recently shipped
 
+- [x] **0.3.6:** taking payment no longer carries a path for orders billed before bills were kept.
 - [x] **0.3.5:** a table is not double-booked by reservations, nor given two open orders, when they are saved at the same moment.
 - [x] **0.3.4:** the interface starts through the frontend's `mountApp`; no routes to the screens apps no longer have.
 - [x] **0.3.3:** the interface on the tuned design system, with better menu icons and cleaner print.
