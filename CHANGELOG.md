@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.5
+
+Needs the same platform as 0.3.4. A table is no longer double-booked by saves at the same moment: each
+check read the table's other bookings and then wrote, and nothing kept two requests from both reading
+"free" (fifty saved at once kept up to 42 reservations of one table and opened up to 48 orders on it).
+
+- **Reservations.** The database holds a table to one party at a time: an exclusion constraint on Table
+  Reservation refuses a time that overlaps another reservation of the table that is not cancelled or a no
+  show, whoever writes it. The one of two saved together that commits second is told "This table is held
+  for another party then"; one saved later is still told who holds it.
+- **Open orders.** Saving a dine-in order locks its table before looking for the table's open order, so
+  orders saved for one table at the same moment take turns: one opens, and the rest are told the table
+  has an open order.
+- `tests/double_booking_it.rs` saves fifty of each at the same moment, each in its own transaction.
+
 ## 0.3.4
 
 Needs the same platform as 0.3.3. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.

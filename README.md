@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.3.4-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.5-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 
 | | |
 |---|---|
-| **Version** | 0.3.4 |
+| **Version** | 0.3.5 |
 | **Kind** | Its own interface at `/restaurant/`: the floor and the kitchen. Orders, menus, tables, reservations and outlets open in the platform's records screens |
 | **What it adds** | 11 entities (6 you work with, 5 that sit inside them), 3 roles, 1 menu module, 1 package. It has no reports or print formats of its own |
 | **Depends on** | Ferrum platform `>=0.3.2, <0.4` and [ERP](https://github.com/CBFerrum/ferrum-app-erp) `>=0.1` (selling, accounting, inventory and manufacturing) |
@@ -108,7 +108,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 
 - **Three kinds.** Dine in (at a table), takeaway and delivery.
 - **The floor starts an order.** A free table opens a new order for that table and its outlet. An empty restaurant says what to set up first.
-- **One open order to a table.** The table shows as taken until the order is billed or cancelled, and saving a second open order for it is refused (add to the first).
+- **One open order to a table.** The table shows as taken until the order is billed or cancelled, and saving a second open order for it is refused (add to the first). Orders saved for one table at the same moment take turns, so one opens.
 - **Lines.** Dish, quantity, seat, choices and a note. A line has a state (New, Sent, Ready, Served, Void) that the kitchen moves on.
 - **Choices are priced with the line,** written as the menu writes them and sent to the kitchen with the dish. A new line whose dish or choices change is priced again. Once sent, they are kept.
 - **Guests, customer and contact.** The number of guests, an optional ERP customer, or a name and phone.
@@ -143,7 +143,7 @@ Ferrum Restaurant is for restaurants, cafés and bars that take orders for the t
 ### 🪑 Reservations
 
 - **A table held for a party at a time:** outlet, table, guest name, phone, party size, start and end, and a state (Booked, Seated, Cancelled, No Show).
-- **A table is held for one party at a time,** and no more than it seats: a reservation that overlaps another booked or seated one for the table, or whose party is larger than the seats, is refused when it is saved. A cancelled reservation frees the time.
+- **A table is held for one party at a time,** and no more than it seats: a reservation that overlaps another booked or seated one for the table, or whose party is larger than the seats, is refused when it is saved. The database holds the table to one party, so of reservations saved at the same moment for one table and time, one is kept. A cancelled reservation frees the time.
 - **Staff enter them.** There is no public reservation page yet.
 
 ### 🔐 Roles, privacy and APIs
@@ -273,6 +273,7 @@ Leaders: Toast, Square for Restaurants, Lightspeed Restaurant, TouchBistro and O
 
 ### ✅ Recently shipped
 
+- [x] **0.3.5:** a table is not double-booked by reservations, nor given two open orders, when they are saved at the same moment.
 - [x] **0.3.4:** the interface starts through the frontend's `mountApp`; no routes to the screens apps no longer have.
 - [x] **0.3.3:** the interface on the tuned design system, with better menu icons and cleaner print.
 - [x] **0.3.2:** the redesigned interface, with the floor and the kitchen on the work-home pattern.
@@ -365,7 +366,7 @@ cd ui
 npm run build && npm run check && npm run typecheck && npm test
 ```
 
-The end-to-end test `tests/restaurant_it.rs` walks an evening: a table's order through the kitchen to the bill, a voided line, a takeaway and a delivery, choices priced and sent to the kitchen, a party moved to a bigger table and another merged into it, bills by seat paid by card with a tip and by cash in parts, the dishes' recipes taken from the store and a store that runs short, reservations, and who may do what.
+The end-to-end test `tests/restaurant_it.rs` walks an evening: a table's order through the kitchen to the bill, a voided line, a takeaway and a delivery, choices priced and sent to the kitchen, a party moved to a bigger table and another merged into it, bills by seat paid by card with a tip and by cash in parts, the dishes' recipes taken from the store and a store that runs short, reservations, and who may do what. `tests/double_booking_it.rs` saves fifty reservations of one table for one time, then fifty orders for one free table, all at the same moment, each in its own transaction, and checks that one of each holds the table.
 
 ## 📂 Project layout
 
@@ -374,7 +375,7 @@ app.yaml          the manifest: id, version, requirements, what it adds to Ferru
 packages/         metadata: entities, roles, menu, a package guide
 src/              the logic in Rust: orders, kitchen, bills, reservations
 ui/               its interface: the floor and the kitchen (React, TypeScript)
-tests/            an end-to-end test against a real PostgreSQL
+tests/            end-to-end tests against a real PostgreSQL
 docs/PROVENANCE.md  what the design took from ERPNext 12's Restaurant module
 CHANGELOG.md      what changed in each version
 ```

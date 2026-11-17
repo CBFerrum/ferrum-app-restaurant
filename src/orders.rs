@@ -170,7 +170,10 @@ impl DocHook for OrderHook {
         match s(doc, "order_type").unwrap_or("Dine In") {
             "Dine In" => {
                 let table = id(doc, "table").ok_or_else(|| Error::field("table", "a table's order needs its table"))?;
-                let of: Option<Option<Uuid>> = sqlx::query_scalar("select outlet from e_dining_table where tenant_id = $1 and id = $2")
+                // The table locked before its open order is looked for: orders saved for it at the same
+                // moment take turns, and each sees the one before. An exclusion constraint cannot hold
+                // "one open order": an order has no time range, only a status.
+                let of: Option<Option<Uuid>> = sqlx::query_scalar("select outlet from e_dining_table where tenant_id = $1 and id = $2 for no key update")
                     .bind(tenant)
                     .bind(table)
                     .fetch_optional(&mut **hc.tx)
