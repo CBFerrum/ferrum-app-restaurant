@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+No database or interface change. Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).
+
+- **Upkeep takes one workspace.** `maintenance(k, tenant)` is the platform's per-workspace entry point; Restaurant still has nothing to run by itself.
+
 ## 0.3.6
 
 Needs the same platform as 0.3.5. No database change, no interface change.
